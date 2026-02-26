@@ -836,24 +836,9 @@ public class EntityVehicleF_Physics extends AEntityVehicleE_Powered {
             case ("radar_detected"):
                 return new ComputedVariable(this, variable, partialTicks -> isBeingTrackedByRadar() ? 1 : 0, false);
             case ("missile_incoming"):
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                return new ComputedVariable(this, variable, partialTicks -> missilesIncoming.isEmpty() ? 0 : 1, false);
-<<<<<<< Updated upstream
-            case ("missile_lockedonto"):
-                return new ComputedVariable(this, variable, partialTicks -> gunsLockedOn.isEmpty() ? 0 : 1, false);
-=======
-=======
                 return new ComputedVariable(this, variable, partialTicks -> world.isClient() ? (missilesIncomingStubs.isEmpty() ? 0 : 1) : (missilesIncoming.isEmpty() ? 0 : 1), false);
             case ("missile_lockedonto"):
                 return new ComputedVariable(this, variable, partialTicks -> world.isClient() ? (gunsLockedOnCount > 0 ? 1 : 0) : (gunsLockedOn.isEmpty() ? 0 : 1), false);
->>>>>>> Stashed changes
->>>>>>> Stashed changes
-=======
-                return new ComputedVariable(this, variable, partialTicks -> world.isClient() ? (missilesIncomingStubs.isEmpty() ? 0 : 1) : (missilesIncoming.isEmpty() ? 0 : 1), false);
-            case ("missile_lockedonto"):
-                return new ComputedVariable(this, variable, partialTicks -> world.isClient() ? (gunsLockedOnCount > 0 ? 1 : 0) : (gunsLockedOn.isEmpty() ? 0 : 1), false);
->>>>>>> Stashed changes
             default: {
                 //Missile incoming variables.
                 //Variable is in the form of missile_X_variablename.
