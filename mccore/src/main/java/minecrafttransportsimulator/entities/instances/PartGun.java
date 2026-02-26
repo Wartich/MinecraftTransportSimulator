@@ -487,7 +487,8 @@ public class PartGun extends APart {
                                     //Need to increment the bullet count, even if we're not actually firing the bullet, so we sync state.
                                     //Note that this takes into account pellets too since they are each their own entity.
                                     ++bulletsFired;
-                                    if (!lastLoadedBullet.definition.bullet.isBlank && (world.isClient() || serverIsPrimaryController)) {
+                                    //Don't spawn long-range bullets on client - they are server-side only
+                                    if (!lastLoadedBullet.definition.bullet.isBlank && (world.isClient() ? !lastLoadedBullet.definition.bullet.isLongRange : serverIsPrimaryController)) {
                                         //Get the bullet's state.
                                         setBulletSpawn(bulletPosition, bulletVelocity, bulletOrientation, muzzle, true);
 
