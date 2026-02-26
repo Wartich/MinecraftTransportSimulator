@@ -199,12 +199,16 @@ public abstract class AEntityVehicleE_Powered extends AEntityVehicleD_Moving {
         //Check to make sure we are still being tracked.
         radarsTracking.removeIf(tracker -> !tracker.isValid || (!tracker.aircraftOnRadar.contains(this) && !tracker.groundersOnRadar.contains(this)));
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         gunsLockedOn.removeIf(gun -> !gun.isValid || (gun.engineTarget != null && gun.engineTarget.vehicleOn != this));
 =======
 <<<<<<< Updated upstream
 =======
         gunsLockedOn.removeIf(gun -> !gun.isValid || (gun.engineTarget != null && gun.engineTarget.vehicleOn != this) || (gun.targetUUID != null && !gun.targetUUID.equals(uniqueUUID)));
 >>>>>>> Stashed changes
+>>>>>>> Stashed changes
+=======
+        gunsLockedOn.removeIf(gun -> !gun.isValid || (gun.engineTarget != null && gun.engineTarget.vehicleOn != this) || (gun.targetUUID != null && !gun.targetUUID.equals(uniqueUUID)));
 >>>>>>> Stashed changes
 
         //If we are supposed to de-spawn, do so.
