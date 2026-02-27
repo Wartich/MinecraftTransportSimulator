@@ -521,6 +521,15 @@ public class PartGun extends APart {
                                             newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired);
                                         }
                                         world.addEntity(newBullet);
+
+                                        //Sync isLongRange bullets to clients for rendering
+                                        if (!world.isClient() && lastLoadedBullet.definition.bullet.isLongRange) {
+                                            InterfaceManager.packetInterface.sendToAllClients(new PacketPartGun(
+                                                this,
+                                                bulletPosition.copy(), bulletVelocity.copy(),
+                                                new RotationMatrix().set(bulletOrientation),
+                                                bulletsFired));
+                                        }
                                     }
                                 }
 
