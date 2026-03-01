@@ -825,9 +825,21 @@ public class PartGun extends APart {
         } else {
             //Player-controlled gun.
             //Check for a target for this gun if we have a lock-on missile.
-            //Only do this once every 1/2 second.
+            //Only do this once every second to reduce CPU usage.
             //First, check if the loaded bullet is guided
-            if (canLockTargetsVar.isActive || (lastLoadedBullet != null && lastLoadedBullet.definition.bullet.turnRate > 0)) {
+            //For isLongRange guns, only run lockon on client (uses radar stubs), server gets target from client via packet
+            boolean canLockOn = canLockTargetsVar.isActive || (lastLoadedBullet != null && lastLoadedBullet.definition.bullet.turnRate > 0);
+            boolean isLongRangeGunOnServer = definition.gun.isLongRange && !world.isClient();
+            if (canLockOn && !isLongRangeGunOnServer && ticksExisted % 20 == 0) {
+                //Debug logging for lockon checks
+                if (ConfigSystem.settings.general.devMode.value) {
+                    String side = world.isClient() ? "CLIENT" : "SERVER";
+                    String targetInfo = "NONE";
+                    if (targetUUID != null) targetInfo = "UUID:" + targetUUID.toString().substring(0, 8);
+                    if (engineTarget != null) targetInfo = "ENGINE:" + engineTarget.vehicleOn.definition.packID + ":" + engineTarget.vehicleOn.definition.systemName;
+                    if (entityTarget != null) targetInfo = "ENTITY:" + entityTarget.getName();
+                    InterfaceManager.coreInterface.logError("[LOCKON] " + side + " Check | Gun:" + definition.packID + ":" + definition.systemName + " | isLongRange:" + definition.gun.isLongRange + " | canLock:" + canLockOn + " | Target:" + targetInfo);
+                }
                 //We are the type of bullet to get a target, figure out if we need one, or we don't do auto-targeting.
                 //If we do auto-target, we need to create a vector to look though.
                 Point3D startPoint = null;
@@ -887,6 +899,16 @@ public class PartGun extends APart {
                                     break;
                                 }
                             }
+                        }
+
+                        //For isLongRange guns, sync targetUUID to server so it can track the target
+                        if (definition.gun.isLongRange && world.isClient() && (targetUUID != null || prevTargetUUID != null) && !java.util.Objects.equals(targetUUID, prevTargetUUID)) {
+                            if (ConfigSystem.settings.general.devMode.value) {
+                                String oldTarget = prevTargetUUID != null ? prevTargetUUID.toString().substring(0, 8) : "NONE";
+                                String newTarget = targetUUID != null ? targetUUID.toString().substring(0, 8) : "NONE";
+                                InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->SERVER SYNC | Old:" + oldTarget + " -> New:" + newTarget);
+                            }
+                            InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, targetUUID));
                         }
                     }
 
