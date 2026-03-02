@@ -509,7 +509,9 @@ public class PartGun extends APart {
                                                 newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired, engineTarget);
                                             } else if (targetUUID != null) {
                                                 // Target tracked by UUID (beyond render distance)
-                                                newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired, targetUUID);
+                                                // Get target position on server (where target is always loaded) to include in bullet
+                                                Point3D targetPos = getTargetPositionByUUID(targetUUID);
+                                                newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired, targetUUID, targetPos);
                                             } else if (definition.gun.lockOnType == LockOnType.MANUAL) {
                                                 newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired, targetPosition);
                                                 activeManualBullets.add(newBullet);
@@ -1779,6 +1781,7 @@ public class PartGun extends APart {
 
     @Override
     public String getRawTextVariableValue(JSONText textDef, float partialTicks) {
+
         if (textDef.variableName.equals("gun_lockedon_name")) {
             return entityTarget != null ? entityTarget.getName() : (engineTarget != null ? engineTarget.masterEntity.toString() : "");
         }

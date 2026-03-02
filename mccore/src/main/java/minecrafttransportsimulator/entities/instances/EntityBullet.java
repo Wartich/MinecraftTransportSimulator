@@ -154,6 +154,25 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
         }
     }
 
+    /**
+     * UUID target with pre-known position for vehicles beyond render distance.
+     * Used when gun has targetUUID and we already have the position (from server).
+     * This ensures bullets can lock on even when the target entity isn't loaded on client.
+     **/
+    public EntityBullet(Point3D position, Point3D motion, RotationMatrix orientation, PartGun gun, int bulletNumber, UUID targetUUID, Point3D targetPos) {
+        this(position, motion, orientation, gun, bulletNumber);
+        this.targetUUID = targetUUID;
+        if (targetPos != null) {
+            this.targetPosition = targetPos.copy();
+            // Register missile in target's missilesIncoming list
+            EntityVehicleF_Physics targetVehicle = gun.world.getEntity(targetUUID);
+            if (targetVehicle != null) {
+                targetVehicle.missilesIncoming.add(this);
+            }
+            displayDebugMessage("LOCKON UUID " + targetUUID + " @ " + targetPosition);
+        }
+    }
+
     @Override
     public void update() {
         super.update();
