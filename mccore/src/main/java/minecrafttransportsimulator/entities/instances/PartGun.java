@@ -1494,18 +1494,18 @@ public class PartGun extends APart {
         if (world.isClient() && vehicleOn != null) {
             // Check aircraft stubs
             for (AEntityB_Existing contact : vehicleOn.aircraftOnRadar) {
-                if (contact instanceof AEntityD_Definable.RadarContactStub) {
-                    AEntityD_Definable.RadarContactStub stub = (AEntityD_Definable.RadarContactStub) contact;
-                    if (stub.stubUUID.equals(targetUUID)) {
+                if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
+                    AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
+                    if (stub.entityUUID.equals(targetUUID)) {
                         return stub.position.copy();
                     }
                 }
             }
             // Check grounder stubs
             for (AEntityB_Existing contact : vehicleOn.groundersOnRadar) {
-                if (contact instanceof AEntityD_Definable.RadarContactStub) {
-                    AEntityD_Definable.RadarContactStub stub = (AEntityD_Definable.RadarContactStub) contact;
-                    if (stub.stubUUID.equals(targetUUID)) {
+                if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
+                    AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
+                    if (stub.entityUUID.equals(targetUUID)) {
                         return stub.position.copy();
                     }
                 }
@@ -1535,19 +1535,19 @@ public class PartGun extends APart {
         if (world.isClient() && vehicleOn != null) {
             // Check aircraft stubs
             for (AEntityB_Existing contact : vehicleOn.aircraftOnRadar) {
-                if (contact instanceof AEntityD_Definable.RadarContactStub) {
-                    AEntityD_Definable.RadarContactStub stub = (AEntityD_Definable.RadarContactStub) contact;
-                    if (stub.stubUUID.equals(targetUUID)) {
-                        return stub.stubVelocity;
+                if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
+                    AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
+                    if (stub.entityUUID.equals(targetUUID)) {
+                        return stub.trackingData;
                     }
                 }
             }
             // Check grounder stubs
             for (AEntityB_Existing contact : vehicleOn.groundersOnRadar) {
-                if (contact instanceof AEntityD_Definable.RadarContactStub) {
-                    AEntityD_Definable.RadarContactStub stub = (AEntityD_Definable.RadarContactStub) contact;
-                    if (stub.stubUUID.equals(targetUUID)) {
-                        return stub.stubVelocity;
+                if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
+                    AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
+                    if (stub.entityUUID.equals(targetUUID)) {
+                        return stub.trackingData;
                     }
                 }
             }
@@ -1626,11 +1626,11 @@ public class PartGun extends APart {
         }
 
         for (AEntityB_Existing contact : contactsToCheck) {
-            if (contact instanceof AEntityD_Definable.RadarContactStub) {
-                AEntityD_Definable.RadarContactStub stub = (AEntityD_Definable.RadarContactStub) contact;
+            if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
+                AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
 
                 // Don't target ourselves
-                if (vehicleOn != null && stub.stubUUID.equals(vehicleOn.uniqueUUID)) {
+                if (vehicleOn != null && stub.entityUUID.equals(vehicleOn.uniqueUUID)) {
                     continue;
                 }
 
@@ -1641,7 +1641,7 @@ public class PartGun extends APart {
                     double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
                     if (targetAngle < coneAngle) {
                         smallestDistance = entityDistance;
-                        closestUUID = stub.stubUUID;
+                        closestUUID = stub.entityUUID;
                     }
                 }
             }

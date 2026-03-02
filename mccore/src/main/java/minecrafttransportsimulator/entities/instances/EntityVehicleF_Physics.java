@@ -851,7 +851,7 @@ public class EntityVehicleF_Physics extends AEntityVehicleE_Powered {
                             if (missilesIncomingStubs.size() > missileNumber) {
                                 switch (missileVariable) {
                                     case ("distance"):
-                                        return missilesIncomingStubs.get(missileNumber).targetDistance;
+                                        return missilesIncomingStubs.get(missileNumber).trackingData;
                                     case ("direction"): {
                                         Point3D missilePos = missilesIncomingStubs.get(missileNumber).position;
                                         return Math.toDegrees(Math.atan2(-missilePos.z + position.z, -missilePos.x + position.x)) + 90 + orientation.angles.y;

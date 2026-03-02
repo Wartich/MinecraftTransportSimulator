@@ -165,16 +165,20 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
     public AItemPack<? extends AJSONItem> lastOpenedItem;
 
     //Radar lists.  Only updated once a tick.  Created when first requested via animations.
-	//Uses AEntityB_Existing to allow both real entities (server) and synced data stubs (client).
+	//Uses AEntityB_Existing to allow both real entities (server) and RemoteEntityStub (client).
     public final List<AEntityB_Existing> aircraftOnRadar = new ArrayList<>();
     public final List<AEntityB_Existing> groundersOnRadar = new ArrayList<>();
-    //Client-side list of radar stubs that are tracking this entity.
-    //Used for radar_X_detected/distance/direction variables when entity is outside client render distance.
-    public final List<RadarContactStub> radarsTrackingStubs = new ArrayList<>();
 
-    //Missile/gun lock-on stub lists for client-side variable access.
-    //Synced from server to client for missile_* and gun lock-on variables.
-    public final List<MissileLockStub> missilesIncomingStubs = new ArrayList<>();
+    //Client-side stub lists for entities outside render distance.
+    //These are synced from server to client and cleaned up after 60 ticks (~3 seconds) of no updates.
+
+    //Stubs for radars that are tracking this entity
+    //Used for radar_X_detected/distance/direction variables.
+    public final List<RemoteEntityStub> radarsTrackingStubs = new ArrayList<>();
+
+    //Stubs for missiles incoming toward this entity
+    //Used for missile_* variables.
+    public final List<RemoteEntityStub> missilesIncomingStubs = new ArrayList<>();
     public int gunsLockedOnCount = 0;
 
     private final Comparator<AEntityB_Existing> entityComparator = new Comparator<AEntityB_Existing>() {
@@ -539,15 +543,21 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
      * by receiving position/velocity data from the server.
      */
     public void setRadarContacts(List<RadarContactData> aircraftContacts, List<RadarContactData> grounderContacts) {
-        aircraftOnRadar.clear();
-        groundersOnRadar.clear();
+        //Remove stale stubs that haven't been updated in 60 ticks (3 seconds)
+        //This handles cases where radar stops detecting a contact
+        aircraftOnRadar.removeIf(stub -> stub instanceof RemoteEntityStub && ((RemoteEntityStub) stub).lastUpdateTick < ticksExisted - 60);
+        groundersOnRadar.removeIf(stub -> stub instanceof RemoteEntityStub && ((RemoteEntityStub) stub).lastUpdateTick < ticksExisted - 60);
 
         //Create stub entities for each contact using synced data
         for (RadarContactData contact : aircraftContacts) {
-            aircraftOnRadar.add(new RadarContactStub(contact.uuid, contact.position, contact.velocity));
+            RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
+            stub.lastUpdateTick = ticksExisted;
+            aircraftOnRadar.add(stub);
         }
         for (RadarContactData contact : grounderContacts) {
-            groundersOnRadar.add(new RadarContactStub(contact.uuid, contact.position, contact.velocity));
+            RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
+            stub.lastUpdateTick = ticksExisted;
+            groundersOnRadar.add(stub);
         }
 
         //Sort by distance (required for radar logic)
@@ -560,12 +570,16 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
      * This allows missile_* and gun lock-on variables to work for entities outside client render distance.
      */
     public void setMissileContacts(List<MissileLockData> missileContacts, int lockedOnCount) {
-        missilesIncomingStubs.clear();
+        //Remove stale stubs that haven't been updated in 60 ticks (3 seconds)
+        missilesIncomingStubs.removeIf(stub -> stub.lastUpdateTick < ticksExisted - 60);
+
         gunsLockedOnCount = lockedOnCount;
 
         //Create stub entities for each incoming missile
         for (MissileLockData contact : missileContacts) {
-            missilesIncomingStubs.add(new MissileLockStub(contact.uuid, contact.position, contact.targetDistance));
+            RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.MISSILE_INCOMING, contact.targetDistance);
+            stub.lastUpdateTick = ticksExisted;
+            missilesIncomingStubs.add(stub);
         }
 
         //Sort by distance (required for missile logic)
@@ -578,8 +592,8 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
      */
     public void addRadarTrackingThis(UUID radarUUID, Point3D radarPosition) {
         //Check if we already have this radar in the list
-        for (RadarContactStub stub : radarsTrackingStubs) {
-            if (stub.stubUUID.equals(radarUUID)) {
+        for (RemoteEntityStub stub : radarsTrackingStubs) {
+            if (stub.entityUUID.equals(radarUUID)) {
                 //Update position for existing stub and update timestamp
                 stub.position.set(radarPosition);
                 stub.lastUpdateTick = ticksExisted;
@@ -587,7 +601,7 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
             }
         }
         //Add new stub with current timestamp
-        RadarContactStub newStub = new RadarContactStub(radarUUID, radarPosition, 0);
+        RemoteEntityStub newStub = new RemoteEntityStub(radarUUID, radarPosition, RemoteEntityStub.StubType.RADAR_TRACKING, 0);
         newStub.lastUpdateTick = ticksExisted;
         radarsTrackingStubs.add(newStub);
     }
@@ -614,27 +628,28 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
     }
 
     /**
-     * Stub class to hold radar contact data from server on client.
-     * This allows animations to work without requiring full entity references.
-     * Also used by guns for targeting vehicles outside render distance.
+     * Unified stub class for remote entities outside client render distance.
+     * Used for radar contacts, radar tracking, and missile lock-on data.
+     * Synced from server to client via PacketRadarSync.
      */
-    public static class RadarContactStub extends AEntityB_Existing {
-        public final UUID stubUUID;
-        public final double stubVelocity;
+    public static class RemoteEntityStub extends AEntityB_Existing {
+        public final UUID entityUUID;
+        //Type of stub: RADAR_CONTACT (what we're detecting), RADAR_TRACKING (who's tracking us), MISSILE_INCOMING (what's coming at us)
+        public final StubType type;
+        //Tracking data: velocity for radar contacts, distance for missiles
+        public final double trackingData;
         //Timestamp of when this stub was last updated.
-        //Used to detect stale radar contacts that are no longer being tracked.
+        //Used to detect stale stubs that are no longer being tracked.
         public long lastUpdateTick;
 
-        public RadarContactStub(UUID uuid, Point3D position, double velocity) {
+        public RemoteEntityStub(UUID uuid, Point3D position, StubType type, double trackingData) {
             super(null, position, new Point3D(), new Point3D());
-            this.stubUUID = uuid;
-            this.stubVelocity = velocity;
+            this.entityUUID = uuid;
+            this.type = type;
+            this.trackingData = trackingData;
             this.lastUpdateTick = 0;
         }
 
-        //Note: getSpeed() is not overridden as it's not defined in AEntityB_Existing
-        //The velocity field is used instead for animations
-
         @Override
         public void update() {
             //No-op: stub doesn't update
@@ -649,35 +664,14 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
         public void remove() {
             //No-op: stub doesn't have resources to remove
         }
-    }
 
-    /**
-     * Stub class to hold missile lock-on data from server on client.
-     * This allows missile_* variables to work without requiring full entity references.
-     */
-    public static class MissileLockStub extends AEntityB_Existing {
-        public final UUID stubUUID;
-        public final double targetDistance;
-
-        public MissileLockStub(UUID uuid, Point3D position, double targetDistance) {
-            super(null, position, new Point3D(), new Point3D());
-            this.stubUUID = uuid;
-            this.targetDistance = targetDistance;
-        }
-
-        @Override
-        public void update() {
-            //No-op: stub doesn't update
-        }
-
-        @Override
-        public IWrapperNBT save(IWrapperNBT data) {
-            return data;
-        }
-
-        @Override
-        public void remove() {
-            //No-op: stub doesn't have resources to remove
+        /**
+         * Stub types for distinguishing what kind of remote entity this represents.
+         */
+        public static enum StubType {
+            RADAR_CONTACT,    // Entity this radar is detecting
+            RADAR_TRACKING,   // Radar that is tracking this entity
+            MISSILE_INCOMING  // Missile incoming toward this entity
         }
     }
 
