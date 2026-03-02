@@ -507,8 +507,8 @@ public class PartGun extends APart {
                                                 newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired, entityTarget);
                                             } else if (engineTarget != null) {
                                                 newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired, engineTarget);
-                                            } else if (targetUUID != null) {
-                                                // Target tracked by UUID (beyond render distance)
+                                            } else if (targetUUID != null && definition.gun.isLongRange) {
+                                                // Only use targetUUID for longRange guns (server can track targets beyond render distance)
                                                 // Get target position on server (where target is always loaded) to include in bullet
                                                 Point3D targetPos = getTargetPositionByUUID(targetUUID);
                                                 newBullet = new EntityBullet(bulletPosition, bulletVelocity, bulletOrientation, this, bulletsFired, targetUUID, targetPos);
@@ -895,7 +895,8 @@ public class PartGun extends APart {
                         EntityVehicleF_Physics vehicleTarget = findAndSetTargetUUID(startPoint, searchVector, coneAngle);
 
                         //If we found a loaded vehicle, get the engine to target.
-                        //Only non-long-range guns and bullets should target engines
+                        //Only non-long-range guns and bullets should target engines.
+                        //For non-longRange, clear targetUUID since we have engineTarget (better tracking).
                         if (vehicleTarget != null && !vehicleTarget.outOfHealth && !definition.gun.isLongRange) {
                             for (APart part : vehicleTarget.parts) {
                                 if (part instanceof PartEngine) {
@@ -903,6 +904,8 @@ public class PartGun extends APart {
                                     break;
                                 }
                             }
+                            // Clear targetUUID since we have a loaded target with engine tracking
+                            targetUUID = null;
                         }
 
                         //For isLongRange guns, sync targetUUID to server so it can track the target
@@ -1602,8 +1605,9 @@ public class PartGun extends APart {
             return vehicleTarget;
         }
 
-        // On client, also check radar stubs for targets beyond render distance
-        if (world.isClient() && vehicleOn != null) {
+        // On client, check radar stubs only for longRange guns (they can track beyond render distance)
+        // Non-longRange guns should only target loaded entities
+        if (world.isClient() && vehicleOn != null && definition.gun.isLongRange) {
             UUID stubUUID = findTargetInRadarStubs(startPoint, normalizedConeVector, coneAngle, smallestDistance);
             if (stubUUID != null) {
                 targetUUID = stubUUID;
@@ -1855,3 +1859,4 @@ public class PartGun extends APart {
         }
     }
 }
+
