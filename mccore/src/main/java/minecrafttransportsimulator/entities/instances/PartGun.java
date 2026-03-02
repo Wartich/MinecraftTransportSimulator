@@ -526,11 +526,13 @@ public class PartGun extends APart {
 
                                         //Sync isLongRange bullets to clients for rendering
                                         if (!world.isClient() && lastLoadedBullet.definition.bullet.isLongRange) {
+                                            // Get target position on server to include in sync packet
+                                            Point3D targetPos = targetUUID != null ? getTargetPositionByUUID(targetUUID) : null;
                                             InterfaceManager.packetInterface.sendToAllClients(new PacketPartGun(
                                                 this,
                                                 bulletPosition.copy(), bulletVelocity.copy(),
                                                 new RotationMatrix().set(bulletOrientation),
-                                                bulletsFired));
+                                                bulletsFired, targetUUID, targetPos));
                                         }
                                     }
                                 }
@@ -1773,6 +1775,7 @@ public class PartGun extends APart {
                 if (variable.startsWith("gun_ammo_") && variable.endsWith("_loaded")) {
                     final int index = Integer.parseInt(variable.substring("gun_ammo_".length(), "gun_ammo_".length() + 1));
                     return new ComputedVariable(this, variable, partialTicks -> loadedBulletCount >= index ? 1 : 0, false);
+
                 } else {
                     return super.createComputedVariable(variable, createDefaultIfNotPresent);
                 }

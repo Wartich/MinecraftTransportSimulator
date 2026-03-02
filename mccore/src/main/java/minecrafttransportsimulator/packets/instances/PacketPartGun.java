@@ -30,6 +30,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
     private final Point3D spawnVelocity;
     private final RotationMatrix spawnOrientation;
     private final int bulletNumber;
+    private final java.util.UUID spawnTargetUUID;
+    private final Point3D spawnTargetPosition;
 
     // For LOCKON_TARGET request
     private final java.util.UUID lockedOnTargetUUID;
@@ -43,6 +45,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnVelocity = null;
         this.spawnOrientation = null;
         this.bulletNumber = 0;
+        this.spawnTargetUUID = null;
+        this.spawnTargetPosition = null;
         this.lockedOnTargetUUID = null;
     }
 
@@ -55,10 +59,12 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnVelocity = null;
         this.spawnOrientation = null;
         this.bulletNumber = 0;
+        this.spawnTargetUUID = null;
+        this.spawnTargetPosition = null;
         this.lockedOnTargetUUID = null;
     }
 
-    public PacketPartGun(PartGun gun, Point3D position, Point3D velocity, RotationMatrix orientation, int bulletNumber) {
+    public PacketPartGun(PartGun gun, Point3D position, Point3D velocity, RotationMatrix orientation, int bulletNumber, java.util.UUID targetUUID, Point3D targetPosition) {
         super(gun);
         this.stateRequest = Request.LONG_RANGE_BULLET_SPAWN;
         this.bulletItem = null;
@@ -67,6 +73,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnVelocity = velocity;
         this.spawnOrientation = orientation;
         this.bulletNumber = bulletNumber;
+        this.spawnTargetUUID = targetUUID;
+        this.spawnTargetPosition = targetPosition;
         this.lockedOnTargetUUID = null;
     }
 
@@ -79,6 +87,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnVelocity = null;
         this.spawnOrientation = null;
         this.bulletNumber = 0;
+        this.spawnTargetUUID = null;
+        this.spawnTargetPosition = null;
         this.lockedOnTargetUUID = targetUUID;
     }
 
@@ -92,6 +102,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             this.spawnVelocity = null;
             this.spawnOrientation = null;
             this.bulletNumber = 0;
+            this.spawnTargetUUID = null;
+            this.spawnTargetPosition = null;
             this.lockedOnTargetUUID = null;
         } else if (stateRequest == Request.LONG_RANGE_BULLET_SPAWN) {
             this.bulletItem = null;
@@ -103,6 +115,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             spawnOrientation.angles.y = buf.readDouble();
             spawnOrientation.angles.z = buf.readDouble();
             this.bulletNumber = buf.readInt();
+            this.spawnTargetUUID = buf.readBoolean() ? readUUIDFromBuffer(buf) : null;
+            this.spawnTargetPosition = buf.readBoolean() ? readPoint3dFromBuffer(buf) : null;
             this.lockedOnTargetUUID = null;
         } else if (stateRequest == Request.LOCKON_TARGET) {
             this.bulletItem = null;
@@ -111,6 +125,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             this.spawnVelocity = null;
             this.spawnOrientation = null;
             this.bulletNumber = 0;
+            this.spawnTargetUUID = null;
+            this.spawnTargetPosition = null;
             this.lockedOnTargetUUID = buf.readBoolean() ? readUUIDFromBuffer(buf) : null;
         } else {
             this.bulletItem = null;
@@ -119,6 +135,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             this.spawnVelocity = null;
             this.spawnOrientation = null;
             this.bulletNumber = 0;
+            this.spawnTargetUUID = null;
+            this.spawnTargetPosition = null;
             this.lockedOnTargetUUID = null;
         }
     }
@@ -137,6 +155,14 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             buf.writeDouble(spawnOrientation.angles.y);
             buf.writeDouble(spawnOrientation.angles.z);
             buf.writeInt(bulletNumber);
+            buf.writeBoolean(spawnTargetUUID != null);
+            if (spawnTargetUUID != null) {
+                writeUUIDToBuffer(spawnTargetUUID, buf);
+            }
+            buf.writeBoolean(spawnTargetPosition != null);
+            if (spawnTargetPosition != null) {
+                writePoint3dToBuffer(spawnTargetPosition, buf);
+            }
         } else if (stateRequest == Request.LOCKON_TARGET) {
             buf.writeBoolean(lockedOnTargetUUID != null);
             if (lockedOnTargetUUID != null) {
@@ -195,7 +221,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
                 ItemBullet bulletItem = gun.lastLoadedBullet;
                 if (bulletItem != null) {
                     gun.lastLoadedBullet = bulletItem;
-                    EntityBullet newBullet = new EntityBullet(spawnPosition, spawnVelocity, spawnOrientation, gun, bulletNumber);
+                    // Pass target data so client can guide the bullet
+                    EntityBullet newBullet = new EntityBullet(spawnPosition, spawnVelocity, spawnOrientation, gun, bulletNumber, spawnTargetUUID, spawnTargetPosition);
                     world.addEntity(newBullet);
                 }
                 break;
