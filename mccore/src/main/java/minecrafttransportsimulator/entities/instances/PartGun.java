@@ -528,7 +528,7 @@ public class PartGun extends APart {
                                                 this,
                                                 bulletPosition.copy(), bulletVelocity.copy(),
                                                 new RotationMatrix().set(bulletOrientation),
-                                                bulletsFired));
+                                                bulletsFired, targetUUID));
                                         }
                                     }
                                 }
