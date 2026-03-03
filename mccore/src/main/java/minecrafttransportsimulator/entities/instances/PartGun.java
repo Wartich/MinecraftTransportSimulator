@@ -881,11 +881,13 @@ public class PartGun extends APart {
                 }
 
                 //If we are the type of gun that needs to lock-on, try to do so now.
+                //Save the previous targetUUID before clearing so we can detect changes for packet sync.
+                UUID oldTargetUUID = targetUUID;
+
                 //First set targets to null to clear any existing targets.
                 engineTarget = null;
                 entityTarget = null;
                 targetUUID = null;
-                updateTargetRegistration();
 
                 //If we have a start point, it means we're a cone-based target system and need to find a target.
                 if (startPoint != null) {
@@ -906,16 +908,6 @@ public class PartGun extends APart {
                             }
                             // Clear targetUUID since we have a loaded target with engine tracking
                             targetUUID = null;
-                        }
-
-                        //For isLongRange guns, sync targetUUID to server so it can track the target
-                        if (definition.gun.isLongRange && world.isClient() && (targetUUID != null || prevTargetUUID != null) && !java.util.Objects.equals(targetUUID, prevTargetUUID)) {
-                            if (ConfigSystem.settings.general.devMode.value) {
-                                String oldTarget = prevTargetUUID != null ? prevTargetUUID.toString().substring(0, 8) : "NONE";
-                                String newTarget = targetUUID != null ? targetUUID.toString().substring(0, 8) : "NONE";
-                                InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->SERVER SYNC | Old:" + oldTarget + " -> New:" + newTarget);
-                            }
-                            InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, targetUUID));
                         }
                     }
 
@@ -942,7 +934,20 @@ public class PartGun extends APart {
                             }
                         }
                     }
-                    updateTargetRegistration();
+                }
+
+                //Update target registration after all target finding is complete.
+                updateTargetRegistration();
+
+                //For isLongRange guns, sync targetUUID to server whenever it changes.
+                //This handles both gaining a new target and losing an existing target.
+                if (definition.gun.isLongRange && world.isClient() && !java.util.Objects.equals(targetUUID, oldTargetUUID)) {
+                    if (ConfigSystem.settings.general.devMode.value) {
+                        String oldTarget = oldTargetUUID != null ? oldTargetUUID.toString().substring(0, 8) : "NONE";
+                        String newTarget = targetUUID != null ? targetUUID.toString().substring(0, 8) : "NONE";
+                        InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->SERVER SYNC | Old:" + oldTarget + " -> New:" + newTarget);
+                    }
+                    InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, targetUUID));
                 }
             }
 
@@ -1469,9 +1474,9 @@ public class PartGun extends APart {
     /**
      * Updates target registration. Call this whenever entityTarget, engineTarget, or targetUUID changes.
      */
-    private void updateTargetRegistration() {
-        // Check if engine target changed
-        if (engineTarget != prevEngineTarget || (targetUUID != null && !targetUUID.equals(prevTargetUUID))) {
+    public void updateTargetRegistration() {
+        // Check if engine target changed or targetUUID changed (including to/from null)
+        if (engineTarget != prevEngineTarget || !java.util.Objects.equals(targetUUID, prevTargetUUID)) {
             unregisterFromPreviousTargetVehicle();
             prevEngineTarget = engineTarget;
             prevTargetUUID = targetUUID;
@@ -1859,4 +1864,3 @@ public class PartGun extends APart {
         }
     }
 }
-

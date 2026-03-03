@@ -231,6 +231,7 @@ public class PacketPartGun extends APacketEntity<PartGun> {
                 // Client sends lockon target UUID to server for isLongRange guns
                 if (gun != null) {
                     gun.targetUUID = lockedOnTargetUUID;
+                    gun.updateTargetRegistration();
                     if (ConfigSystem.settings.general.devMode.value) {
                         String targetInfo = lockedOnTargetUUID != null ? lockedOnTargetUUID.toString().substring(0, 8) : "NONE";
                         InterfaceManager.coreInterface.logError("[LOCKON] SERVER RECEIVED | Gun:" + (gun.definition != null ? gun.definition.packID + ":" + gun.definition.systemName : "unknown") + " | Target:" + targetInfo);
