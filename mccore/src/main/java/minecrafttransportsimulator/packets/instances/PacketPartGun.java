@@ -145,6 +145,7 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             spawnOrientation.angles.x = buf.readDouble();
             spawnOrientation.angles.y = buf.readDouble();
             spawnOrientation.angles.z = buf.readDouble();
+            spawnOrientation.updateToAngles(); // Rebuild matrix from angles
             this.bulletNumber = buf.readInt();
             this.spawnTargetUUID = buf.readBoolean() ? readUUIDFromBuffer(buf) : null;
             this.spawnTargetPosition = buf.readBoolean() ? readPoint3dFromBuffer(buf) : null;
