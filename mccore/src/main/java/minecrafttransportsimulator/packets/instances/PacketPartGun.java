@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import minecrafttransportsimulator.baseclasses.Point3D;
 import minecrafttransportsimulator.baseclasses.RotationMatrix;
 import minecrafttransportsimulator.entities.instances.EntityBullet;
+import minecrafttransportsimulator.entities.instances.EntityVehicleF_Physics;
 import minecrafttransportsimulator.entities.instances.PartGun;
 import minecrafttransportsimulator.items.instances.ItemBullet;
 import minecrafttransportsimulator.mcinterface.AWrapperWorld;
@@ -36,6 +37,10 @@ public class PacketPartGun extends APacketEntity<PartGun> {
     // For LOCKON_TARGET request
     private final java.util.UUID lockedOnTargetUUID;
 
+    // For LOCKON_COUNT request
+    private final java.util.UUID targetVehicleUUID;
+    private final int lockedOnCount;
+
     public PacketPartGun(PartGun gun, Request stateRequest) {
         super(gun);
         this.stateRequest = stateRequest;
@@ -48,6 +53,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnTargetUUID = null;
         this.spawnTargetPosition = null;
         this.lockedOnTargetUUID = null;
+        this.targetVehicleUUID = null;
+        this.lockedOnCount = 0;
     }
 
     public PacketPartGun(PartGun gun, ItemBullet bullet, int bulletQty) {
@@ -62,6 +69,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnTargetUUID = null;
         this.spawnTargetPosition = null;
         this.lockedOnTargetUUID = null;
+        this.targetVehicleUUID = null;
+        this.lockedOnCount = 0;
     }
 
     public PacketPartGun(PartGun gun, Point3D position, Point3D velocity, RotationMatrix orientation, int bulletNumber, java.util.UUID targetUUID, Point3D targetPosition) {
@@ -76,6 +85,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnTargetUUID = targetUUID;
         this.spawnTargetPosition = targetPosition;
         this.lockedOnTargetUUID = null;
+        this.targetVehicleUUID = null;
+        this.lockedOnCount = 0;
     }
 
     public PacketPartGun(PartGun gun, java.util.UUID targetUUID) {
@@ -90,6 +101,24 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         this.spawnTargetUUID = null;
         this.spawnTargetPosition = null;
         this.lockedOnTargetUUID = targetUUID;
+        this.targetVehicleUUID = null;
+        this.lockedOnCount = 0;
+    }
+
+    public PacketPartGun(PartGun gun, java.util.UUID targetVehicleUUID, int lockedOnCount) {
+        super(gun);
+        this.stateRequest = Request.LOCKON_COUNT;
+        this.bulletItem = null;
+        this.bulletQty = 0;
+        this.spawnPosition = null;
+        this.spawnVelocity = null;
+        this.spawnOrientation = null;
+        this.bulletNumber = 0;
+        this.spawnTargetUUID = null;
+        this.spawnTargetPosition = null;
+        this.lockedOnTargetUUID = null;
+        this.targetVehicleUUID = targetVehicleUUID;
+        this.lockedOnCount = lockedOnCount;
     }
 
     public PacketPartGun(ByteBuf buf) {
@@ -105,6 +134,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             this.spawnTargetUUID = null;
             this.spawnTargetPosition = null;
             this.lockedOnTargetUUID = null;
+            this.targetVehicleUUID = null;
+            this.lockedOnCount = 0;
         } else if (stateRequest == Request.LONG_RANGE_BULLET_SPAWN) {
             this.bulletItem = null;
             this.bulletQty = 0;
@@ -118,6 +149,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             this.spawnTargetUUID = buf.readBoolean() ? readUUIDFromBuffer(buf) : null;
             this.spawnTargetPosition = buf.readBoolean() ? readPoint3dFromBuffer(buf) : null;
             this.lockedOnTargetUUID = null;
+            this.targetVehicleUUID = null;
+            this.lockedOnCount = 0;
         } else if (stateRequest == Request.LOCKON_TARGET) {
             this.bulletItem = null;
             this.bulletQty = 0;
@@ -128,6 +161,20 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             this.spawnTargetUUID = null;
             this.spawnTargetPosition = null;
             this.lockedOnTargetUUID = buf.readBoolean() ? readUUIDFromBuffer(buf) : null;
+            this.targetVehicleUUID = null;
+            this.lockedOnCount = 0;
+        } else if (stateRequest == Request.LOCKON_COUNT) {
+            this.bulletItem = null;
+            this.bulletQty = 0;
+            this.spawnPosition = null;
+            this.spawnVelocity = null;
+            this.spawnOrientation = null;
+            this.bulletNumber = 0;
+            this.spawnTargetUUID = null;
+            this.spawnTargetPosition = null;
+            this.lockedOnTargetUUID = null;
+            this.targetVehicleUUID = readUUIDFromBuffer(buf);
+            this.lockedOnCount = buf.readInt();
         } else {
             this.bulletItem = null;
             this.bulletQty = 0;
@@ -138,6 +185,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             this.spawnTargetUUID = null;
             this.spawnTargetPosition = null;
             this.lockedOnTargetUUID = null;
+            this.targetVehicleUUID = null;
+            this.lockedOnCount = 0;
         }
     }
 
@@ -168,6 +217,9 @@ public class PacketPartGun extends APacketEntity<PartGun> {
             if (lockedOnTargetUUID != null) {
                 writeUUIDToBuffer(lockedOnTargetUUID, buf);
             }
+        } else if (stateRequest == Request.LOCKON_COUNT) {
+            writeUUIDToBuffer(targetVehicleUUID, buf);
+            buf.writeInt(lockedOnCount);
         }
     }
 
@@ -239,6 +291,20 @@ public class PacketPartGun extends APacketEntity<PartGun> {
                 }
                 break;
             }
+            case LOCKON_COUNT: {
+                // Client sends lockon count for isLongRange guns to target vehicle
+                // This is needed because the target may not be loaded on server
+                if (targetVehicleUUID != null) {
+                    EntityVehicleF_Physics targetVehicle = world.getEntity(targetVehicleUUID);
+                    if (targetVehicle != null) {
+                        targetVehicle.reportedGunsLockedOn = lockedOnCount;
+                        if (ConfigSystem.settings.general.devMode.value) {
+                            InterfaceManager.coreInterface.logError("[LOCKON] SERVER COUNT RECEIVED | Target:" + targetVehicleUUID.toString().substring(0, 8) + " | Count:" + lockedOnCount);
+                        }
+                    }
+                }
+                break;
+            }
         }
         return stateRequest.sendToClients;
     }
@@ -255,7 +321,8 @@ public class PacketPartGun extends APacketEntity<PartGun> {
         BULLETS_PRESENT(false),
         HANDHELD_MOVEMENTS(true),
         LONG_RANGE_BULLET_SPAWN(false),
-        LOCKON_TARGET(true);
+        LOCKON_TARGET(true),
+        LOCKON_COUNT(true);
 
         private final boolean sendToClients;
 

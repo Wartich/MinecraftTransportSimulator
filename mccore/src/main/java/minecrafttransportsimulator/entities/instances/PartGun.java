@@ -948,6 +948,36 @@ public class PartGun extends APart {
                         InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->SERVER SYNC | Old:" + oldTarget + " -> New:" + newTarget);
                     }
                     InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, targetUUID));
+
+                    // Also sync lockon count to the target vehicle so missile_lockedonto works
+                    // Count all guns on our vehicle that have locked onto each target
+                    if (vehicleOn != null) {
+                        java.util.Map<java.util.UUID, Integer> lockonCounts = new java.util.HashMap<>();
+                        for (APart part : vehicleOn.allParts) {
+                            if (part instanceof PartGun) {
+                                PartGun gun = (PartGun) part;
+                                if (gun.definition.gun.isLongRange && gun.targetUUID != null) {
+                                    lockonCounts.merge(gun.targetUUID, 1, Integer::sum);
+                                }
+                            }
+                        }
+
+                        // Send counts to all targets we're tracking
+                        for (java.util.Map.Entry<java.util.UUID, Integer> entry : lockonCounts.entrySet()) {
+                            if (ConfigSystem.settings.general.devMode.value) {
+                                InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + entry.getKey().toString().substring(0, 8) + " | Count:" + entry.getValue());
+                            }
+                            InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, entry.getKey(), entry.getValue()));
+                        }
+
+                        // If we lost target, send 0 to old target (if not already in the map)
+                        if (oldTargetUUID != null && !java.util.Objects.equals(oldTargetUUID, targetUUID) && !lockonCounts.containsKey(oldTargetUUID)) {
+                            if (ConfigSystem.settings.general.devMode.value) {
+                                InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + oldTargetUUID.toString().substring(0, 8) + " | Count:0");
+                            }
+                            InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, oldTargetUUID, 0));
+                        }
+                    }
                 }
             }
 

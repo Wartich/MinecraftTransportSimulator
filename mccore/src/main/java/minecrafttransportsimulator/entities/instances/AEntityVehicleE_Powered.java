@@ -73,6 +73,9 @@ public abstract class AEntityVehicleE_Powered extends AEntityVehicleD_Moving {
     public final List<AEntityD_Definable<?>> radarsTracking = new ArrayList<>();
     public final List<PartGun> gunsLockedOn = new ArrayList<>();
 
+    //Client-reported lockon count for isLongRange guns (target may not be loaded on server)
+    public int reportedGunsLockedOn = 0;
+
     public AEntityVehicleE_Powered(AWrapperWorld world, IWrapperPlayer placingPlayer, ItemVehicle item, IWrapperNBT data) {
         super(world, placingPlayer, item, data);
 
