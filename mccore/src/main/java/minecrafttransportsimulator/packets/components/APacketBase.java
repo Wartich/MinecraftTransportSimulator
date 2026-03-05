@@ -47,7 +47,7 @@ import minecrafttransportsimulator.packets.instances.PacketPlayerChatMessage;
 import minecrafttransportsimulator.packets.instances.PacketPlayerCraftItem;
 import minecrafttransportsimulator.packets.instances.PacketPlayerItemTransfer;
 import minecrafttransportsimulator.packets.instances.PacketRadioStateChange;
-import minecrafttransportsimulator.packets.instances.PacketRadarSync;
+import minecrafttransportsimulator.packets.components.PacketRadarSync;
 import minecrafttransportsimulator.packets.instances.PacketTileEntityChargerBattery;
 import minecrafttransportsimulator.packets.instances.PacketTileEntityFuelPumpConnection;
 import minecrafttransportsimulator.packets.instances.PacketTileEntityFuelPumpDispense;

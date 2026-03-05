@@ -983,6 +983,10 @@ public class PartGun extends APart {
 
             //If we have any manual bullets, do tracking for them.
             if (!activeManualBullets.isEmpty()) {
+                //Ensure targetPosition is initialized before using it.
+                if (targetPosition == null) {
+                    targetPosition = new Point3D();
+                }
                 Point3D laserStart = controller.getEyePosition().copy();
                 BlockHitResult laserHit = world.getBlockHit(laserStart, controller.getLineOfSight(2048));
                 if (laserHit != null) {
@@ -1781,6 +1785,7 @@ public class PartGun extends APart {
             case ("gun_windup_rotation"):
                 return new ComputedVariable(this, variable, partialTicks -> windupRotation, false);
             case ("gun_windup_complete"):
+
                 return new ComputedVariable(this, variable, partialTicks -> windupTimeCurrent == definition.gun.windupTime ? 1 : 0, false);
             case ("gun_reload"):
                 return new ComputedVariable(this, variable, partialTicks -> isReloading ? 1 : 0, false);

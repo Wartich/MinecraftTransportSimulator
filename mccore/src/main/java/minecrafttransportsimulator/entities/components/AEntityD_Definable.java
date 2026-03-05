@@ -47,10 +47,10 @@ import minecrafttransportsimulator.mcinterface.IWrapperItemStack;
 import minecrafttransportsimulator.mcinterface.IWrapperNBT;
 import minecrafttransportsimulator.mcinterface.IWrapperPlayer;
 import minecrafttransportsimulator.mcinterface.InterfaceManager;
+import minecrafttransportsimulator.packets.components.PacketRadarSync;
+import minecrafttransportsimulator.packets.components.PacketRadarSync.MissileLockData;
+import minecrafttransportsimulator.packets.components.PacketRadarSync.RadarContactData;
 import minecrafttransportsimulator.packets.instances.PacketEntityInteractGUI;
-import minecrafttransportsimulator.packets.instances.PacketRadarSync;
-import minecrafttransportsimulator.packets.instances.PacketRadarSync.MissileLockData;
-import minecrafttransportsimulator.packets.instances.PacketRadarSync.RadarContactData;
 import minecrafttransportsimulator.packloading.PackParser;
 import minecrafttransportsimulator.rendering.AModelParser;
 import minecrafttransportsimulator.rendering.DurationDelayClock;
@@ -548,16 +548,47 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
         aircraftOnRadar.removeIf(stub -> stub instanceof RemoteEntityStub && ((RemoteEntityStub) stub).lastUpdateTick < ticksExisted - 60);
         groundersOnRadar.removeIf(stub -> stub instanceof RemoteEntityStub && ((RemoteEntityStub) stub).lastUpdateTick < ticksExisted - 60);
 
-        //Create stub entities for each contact using synced data
+        //Update or create stub entities for each contact using synced data
+        //This prevents duplicates where one vehicle takes up multiple radar slots
         for (RadarContactData contact : aircraftContacts) {
-            RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
-            stub.lastUpdateTick = ticksExisted;
-            aircraftOnRadar.add(stub);
+            //Check if we already have a stub for this UUID
+            RemoteEntityStub existingStub = null;
+            for (AEntityB_Existing entity : aircraftOnRadar) {
+                if (entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid)) {
+                    existingStub = (RemoteEntityStub) entity;
+                    break;
+                }
+            }
+            if (existingStub != null) {
+                //Update existing stub with new position and timestamp
+                existingStub.position.set(contact.position);
+                existingStub.lastUpdateTick = ticksExisted;
+            } else {
+                //Create new stub
+                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
+                stub.lastUpdateTick = ticksExisted;
+                aircraftOnRadar.add(stub);
+            }
         }
         for (RadarContactData contact : grounderContacts) {
-            RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
-            stub.lastUpdateTick = ticksExisted;
-            groundersOnRadar.add(stub);
+            //Check if we already have a stub for this UUID
+            RemoteEntityStub existingStub = null;
+            for (AEntityB_Existing entity : groundersOnRadar) {
+                if (entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid)) {
+                    existingStub = (RemoteEntityStub) entity;
+                    break;
+                }
+            }
+            if (existingStub != null) {
+                //Update existing stub with new position and timestamp
+                existingStub.position.set(contact.position);
+                existingStub.lastUpdateTick = ticksExisted;
+            } else {
+                //Create new stub
+                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
+                stub.lastUpdateTick = ticksExisted;
+                groundersOnRadar.add(stub);
+            }
         }
 
         //Sort by distance (required for radar logic)
@@ -575,11 +606,27 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
 
         gunsLockedOnCount = lockedOnCount;
 
-        //Create stub entities for each incoming missile
+        //Update or create stub entities for each incoming missile
+        //This prevents duplicates where one missile takes up multiple slots
         for (MissileLockData contact : missileContacts) {
-            RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.MISSILE_INCOMING, contact.targetDistance);
-            stub.lastUpdateTick = ticksExisted;
-            missilesIncomingStubs.add(stub);
+            //Check if we already have a stub for this UUID
+            RemoteEntityStub existingStub = null;
+            for (AEntityB_Existing entity : missilesIncomingStubs) {
+                if (entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid)) {
+                    existingStub = (RemoteEntityStub) entity;
+                    break;
+                }
+            }
+            if (existingStub != null) {
+                //Update existing stub with new position and timestamp
+                existingStub.position.set(contact.position);
+                existingStub.lastUpdateTick = ticksExisted;
+            } else {
+                //Create new stub
+                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.MISSILE_INCOMING, contact.targetDistance);
+                stub.lastUpdateTick = ticksExisted;
+                missilesIncomingStubs.add(stub);
+            }
         }
 
         //Sort by distance (required for missile logic)
