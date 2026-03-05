@@ -163,46 +163,48 @@ public class BuilderEntityExisting extends ABuilderEntityBase {
 
     @Override
     public boolean attackEntityFrom(DamageSource source, float amount) {
-        if (ConfigSystem.settings.damage.allowExternalDamage.value && !world.isRemote && entity instanceof AEntityF_Multipart) {
-            AEntityF_Multipart<?> multipart = ((AEntityF_Multipart<?>) entity);
-            if (multipart instanceof EntityVehicleF_Physics) {
-                amount *= ConfigSystem.externalDamageOverrides.overrides.get(multipart.definition.packID).get(multipart.definition.systemName);
-            }
-            Entity attacker = source.getImmediateSource();
-            Entity trueSource = source.getTrueSource();
-            WrapperPlayer playerSource = trueSource instanceof EntityPlayer ? WrapperPlayer.getWrapperFor((EntityPlayer) trueSource) : null;
-            if (lastExplosionPosition != null && source.isExplosion()) {
-                //We encountered an explosion.  These may or may not have have entities linked to them.  Depends on if
-                //it's a player firing a gun that had a bullet, or a random TNT lighting in the world.
-                //Explosions, unlike other damage sources, can hit multiple collision boxes on an entity at once.
-                BoundingBox explosiveBounds = new BoundingBox(lastExplosionPosition, amount, amount, amount);
-                for (BoundingBox box : interactAttackBoxes.getBoxes()) {
-                    if (box.intersects(explosiveBounds)) {
-                        multipart.attack(new Damage(amount, box, null, playerSource, null).setExplosive());
-                    }
-                }
-                lastExplosionPosition = null;
-            } else if (attacker != null) {
-                //Check the damage at the current position of the attacker.
-                Point3D attackerPosition = new Point3D(attacker.posX, attacker.posY, attacker.posZ);
-                for (BoundingBox box : interactAttackBoxes.getBoxes()) {
-                    if (box.isPointInside(attackerPosition, null)) {
-                        multipart.attack(new Damage(amount, box, null, playerSource, null));
-                        return true;
-                    }
-                }
+        if (source == null || !ConfigSystem.settings.damage.allowExternalDamage.value || world.isRemote || !(entity instanceof AEntityF_Multipart)) {
+            return super.attackEntityFrom(source, amount);
+        }
 
-                //No damage from direct attack, see if we have movement and are a projectile.
-                Vec3d mcMovement = attacker.getPositionVector();
-                if (mcMovement.lengthSquared() != 0) {
-                    //Check the theoretical position of the entity should it have moved.
-                    //Some projectiles may call their attacking code before updating their positions.
-                    //We do raytracing here to catch this movement.
-                    Point3D endPosition = attackerPosition.copy().add(mcMovement.x, mcMovement.y, mcMovement.z);
-                    Collection<BoundingBoxHitResult> hitResults = multipart.getHitBoxes(attackerPosition, endPosition, new BoundingBox(attackerPosition, endPosition), false);
-                    if (hitResults != null) {
-                        multipart.attackProjectile(new Damage(amount, null, null, playerSource, null), null, hitResults);
-                    }
+        AEntityF_Multipart<?> multipart = ((AEntityF_Multipart<?>) entity);
+        if (multipart instanceof EntityVehicleF_Physics) {
+            amount *= ConfigSystem.externalDamageOverrides.overrides.get(multipart.definition.packID).get(multipart.definition.systemName);
+        }
+        Entity attacker = source.getImmediateSource();
+        Entity trueSource = source.getTrueSource();
+        WrapperPlayer playerSource = trueSource instanceof EntityPlayer ? WrapperPlayer.getWrapperFor((EntityPlayer) trueSource) : null;
+        if (lastExplosionPosition != null && source.isExplosion()) {
+            //We encountered an explosion.  These may or may not have have entities linked to them.  Depends on if
+            //it's a player firing a gun that had a bullet, or a random TNT lighting in the world.
+            //Explosions, unlike other damage sources, can hit multiple collision boxes on an entity at once.
+            BoundingBox explosiveBounds = new BoundingBox(lastExplosionPosition, amount, amount, amount);
+            for (BoundingBox box : interactAttackBoxes.getBoxes()) {
+                if (box.intersects(explosiveBounds)) {
+                    multipart.attack(new Damage(amount, box, null, playerSource, null).setExplosive());
+                }
+            }
+            lastExplosionPosition = null;
+        } else if (attacker != null) {
+            //Check the damage at the current position of the attacker.
+            Point3D attackerPosition = new Point3D(attacker.posX, attacker.posY, attacker.posZ);
+            for (BoundingBox box : interactAttackBoxes.getBoxes()) {
+                if (box.isPointInside(attackerPosition, null)) {
+                    multipart.attack(new Damage(amount, box, null, playerSource, null));
+                    return true;
+                }
+            }
+
+            //No damage from direct attack, see if we have movement and are a projectile.
+            Vec3d mcMovement = attacker.getPositionVector();
+            if (mcMovement.lengthSquared() != 0) {
+                //Check the theoretical position of the entity should it have moved.
+                //Some projectiles may call their attacking code before updating their positions.
+                //We do raytracing here to catch this movement.
+                Point3D endPosition = attackerPosition.copy().add(mcMovement.x, mcMovement.y, mcMovement.z);
+                Collection<BoundingBoxHitResult> hitResults = multipart.getHitBoxes(attackerPosition, endPosition, new BoundingBox(attackerPosition, endPosition), false);
+                if (hitResults != null) {
+                    multipart.attackProjectile(new Damage(amount, null, null, playerSource, null), null, hitResults);
                 }
             }
         }
