@@ -49,6 +49,11 @@ public class PacketEntityBulletHitBlock extends APacketBase {
 
     @Override
     public void handle(AWrapperWorld world) {
-        EntityBullet.performBlockHitLogic(world.getBulletGun(gunID), bulletNumber, blockPosition, blockSide);
+        PartGun gun = world.getBulletGun(gunID);
+        //Gun may be null if it hasn't been registered yet (e.g., chunk loading delays).
+        //performBlockHitLogic handles this, but we check here to avoid unnecessary object creation.
+        if (gun != null) {
+            EntityBullet.performBlockHitLogic(gun, bulletNumber, blockPosition, blockSide);
+        }
     }
 }

@@ -45,13 +45,13 @@ public class PacketRadarSync extends APacketBase {
         int aircraftCount = buf.readInt();
         this.aircraftContacts = new ArrayList<>(aircraftCount);
         for (int i = 0; i < aircraftCount; i++) {
-            aircraftContacts.add(new RadarContactData(readUUIDFromBuffer(buf), readPoint3dFromBuffer(buf), buf.readDouble()));
+            aircraftContacts.add(new RadarContactData(readUUIDFromBuffer(buf), readPoint3dFromBuffer(buf), buf.readDouble(), readPoint3dFromBuffer(buf)));
         }
         
         int grounderCount = buf.readInt();
         this.grounderContacts = new ArrayList<>(grounderCount);
         for (int i = 0; i < grounderCount; i++) {
-            grounderContacts.add(new RadarContactData(readUUIDFromBuffer(buf), readPoint3dFromBuffer(buf), buf.readDouble()));
+            grounderContacts.add(new RadarContactData(readUUIDFromBuffer(buf), readPoint3dFromBuffer(buf), buf.readDouble(), readPoint3dFromBuffer(buf)));
         }
 
         int trackedCount = buf.readInt();
@@ -82,6 +82,7 @@ public class PacketRadarSync extends APacketBase {
             writeUUIDToBuffer(contact.uuid, buf);
             writePoint3dToBuffer(contact.position, buf);
             buf.writeDouble(contact.velocity);
+            writePoint3dToBuffer(contact.motion, buf);
         }
         
         buf.writeInt(grounderContacts.size());
@@ -89,6 +90,7 @@ public class PacketRadarSync extends APacketBase {
             writeUUIDToBuffer(contact.uuid, buf);
             writePoint3dToBuffer(contact.position, buf);
             buf.writeDouble(contact.velocity);
+            writePoint3dToBuffer(contact.motion, buf);
         }
 
         buf.writeInt(trackedVehicleUUIDs.size());
@@ -134,11 +136,13 @@ public class PacketRadarSync extends APacketBase {
         public final UUID uuid;
         public final Point3D position;
         public final double velocity;
-        
-        public RadarContactData(UUID uuid, Point3D position, double velocity) {
+        public final Point3D motion;
+
+        public RadarContactData(UUID uuid, Point3D position, double velocity, Point3D motion) {
             this.uuid = uuid;
             this.position = position;
             this.velocity = velocity;
+            this.motion = motion;
         }
     }
 

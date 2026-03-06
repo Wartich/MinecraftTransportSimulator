@@ -346,6 +346,7 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 }
             }
         }
+
     }
 
     @Override
@@ -392,10 +393,10 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
         }
         playerCraftedItem = false;
 
-        //Only update radar once a second on the server, and only if we requested it via variables.
+        //Update radar on the server every tick.
         //Server does the detection to support vehicles outside client render distance.
         //Results are synced to clients via packets.
-        if (definition.general.radarRange > 0 && ticksExisted % 20 == 0) {
+        if (definition.general.radarRange > 0) {
             if (!world.isClient()) {
                 //Server-side: detect vehicles and sync to clients
                 Collection<EntityVehicleF_Physics> allVehicles = world.getEntitiesOfType(EntityVehicleF_Physics.class);
@@ -404,11 +405,19 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 Point3D searchVector = new Point3D();
                 Point3D LOSVector = new Point3D();
                 for (EntityVehicleF_Physics vehicle : allVehicles) {
+                    //Check if vehicle is visible to radar
+                    if (!vehicle.isRadarVisible()) {
+                        continue;
+                    }
+
+                    //Get the vehicle's radar target position for detection
+                    Point3D vehicleRadarPos = vehicle.getRadarTargetPosition();
+
                     searchVector.set(0, 0, definition.general.radarRange).rotate(orientation);
-                    LOSVector.set(vehicle.position).subtract(position).normalize();
+                    LOSVector.set(vehicleRadarPos).subtract(position).normalize();
                     double coneAngle = definition.general.radarWidth;
                     double angle = Math.abs(Math.toDegrees(Math.acos(searchVector.normalize().dotProduct(LOSVector, false))));
-                    if (!vehicle.outOfHealth && vehicle != this && (angle < coneAngle && vehicle.position.isDistanceToCloserThan(position, definition.general.radarRange))) {
+                    if (!vehicle.outOfHealth && vehicle != this && (angle < coneAngle && vehicleRadarPos.isDistanceToCloserThan(position, definition.general.radarRange))) {
                         if (vehicle.definition.motorized.isAircraft) {
                             aircraftOnRadar.add(vehicle);
                         } else {
@@ -429,14 +438,14 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 for (AEntityB_Existing contact : aircraftOnRadar) {
                     if (contact instanceof EntityVehicleF_Physics) {
                         EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
-                        aircraftData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.position.copy(), vehicle.motion.length()));
+                        aircraftData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
                         trackedVehicleUUIDs.add(vehicle.uniqueUUID);
                     }
                 }
                 for (AEntityB_Existing contact : groundersOnRadar) {
                     if (contact instanceof EntityVehicleF_Physics) {
                         EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
-                        grounderData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.position.copy(), vehicle.motion.length()));
+                        grounderData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
                         trackedVehicleUUIDs.add(vehicle.uniqueUUID);
                     }
                 }
@@ -452,7 +461,7 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                     lockedOnCount = vehicle.gunsLockedOn.size();
                 }
 
-                InterfaceManager.packetInterface.sendToAllClients(new PacketRadarSync(uniqueUUID, position.copy(), aircraftData, grounderData, trackedVehicleUUIDs, missileData, lockedOnCount));
+                InterfaceManager.packetInterface.sendToAllClients(new PacketRadarSync(uniqueUUID, getRadarTargetPosition(), aircraftData, grounderData, trackedVehicleUUIDs, missileData, lockedOnCount));
             }
             //On client, radar lists are populated by PacketRadarSync from server
 
@@ -560,12 +569,13 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 }
             }
             if (existingStub != null) {
-                //Update existing stub with new position and timestamp
+                //Update existing stub with new position, motion, and timestamp
                 existingStub.position.set(contact.position);
+                existingStub.motion.set(contact.motion);
                 existingStub.lastUpdateTick = ticksExisted;
             } else {
                 //Create new stub
-                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
+                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity, contact.motion);
                 stub.lastUpdateTick = ticksExisted;
                 aircraftOnRadar.add(stub);
             }
@@ -580,12 +590,13 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 }
             }
             if (existingStub != null) {
-                //Update existing stub with new position and timestamp
+                //Update existing stub with new position, motion, and timestamp
                 existingStub.position.set(contact.position);
+                existingStub.motion.set(contact.motion);
                 existingStub.lastUpdateTick = ticksExisted;
             } else {
                 //Create new stub
-                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity);
+                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity, contact.motion);
                 stub.lastUpdateTick = ticksExisted;
                 groundersOnRadar.add(stub);
             }
@@ -675,6 +686,93 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
     }
 
     /**
+     * Returns true if this entity is visible to radar (can be detected).
+     * Checks the radarTarget animations for visibility.
+     * Only checks visibility if radarTarget has animations defined.
+     */
+    public boolean isRadarVisible() {
+        // Only check visibility if radarTarget has animations defined
+        if (definition.general.radarTarget != null && definition.general.radarTarget.animations != null && !definition.general.radarTarget.animations.isEmpty()) {
+            for (JSONAnimationDefinition anim : definition.general.radarTarget.animations) {
+                if (anim.animationType == JSONAnimationDefinition.AnimationComponentType.VISIBILITY) {
+                    try {
+                        double variableValue = getOrCreateVariable(anim.variable).computeValue(0);
+                        //Check clamps
+                        if (variableValue < anim.clampMin || variableValue > anim.clampMax) {
+                            return false;
+                        }
+                    } catch (Exception e) {
+                        // If variable doesn't exist, assume visible
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Gets the position where this entity appears on radar / where missiles should target.
+     * Applies the radarTarget offset and animations.
+     * Returns a new Point3D that should be used for radar detection and missile targeting.
+     */
+    public Point3D getRadarTargetPosition() {
+        Point3D targetPos = position.copy();
+
+        //Apply base position offset if defined
+        if (definition.general.radarTarget != null && definition.general.radarTarget.pos != null) {
+            targetPos.add(definition.general.radarTarget.pos.copy().rotate(orientation));
+        }
+
+        //Apply animation translations if present - calculate directly to avoid cumulative issues
+        //Note: Animation translations are in local coordinates, so we rotate by entity orientation
+        if (definition.general.radarTarget != null && definition.general.radarTarget.animations != null && !definition.general.radarTarget.animations.isEmpty()) {
+            for (JSONAnimationDefinition anim : definition.general.radarTarget.animations) {
+                if (anim.animationType == JSONAnimationDefinition.AnimationComponentType.TRANSLATION) {
+                    //Check if animation should be active based on clamps
+                    double variableValue = 0;
+                    try {
+                        variableValue = getOrCreateVariable(anim.variable).computeValue(0);
+                    } catch (Exception e) {
+                        //Variable doesn't exist, skip
+                        continue;
+                    }
+
+                    //Check clamps if defined
+                    if (anim.clampMin != 0 || anim.clampMax != 0) {
+                        if (variableValue < anim.clampMin || variableValue > anim.clampMax) {
+                            continue;
+                        }
+                    }
+
+                    //Calculate translation based on axis
+                    double translationValue = variableValue;
+                    if (anim.axis.x != 0) {
+                        translationValue *= anim.axis.x;
+                    } else if (anim.axis.y != 0) {
+                        translationValue *= anim.axis.y;
+                    } else if (anim.axis.z != 0) {
+                        translationValue *= anim.axis.z;
+                    }
+
+                    //Apply translation in local coordinates then rotate to world
+                    Point3D localTranslation = new Point3D();
+                    if (anim.axis.x != 0) {
+                        localTranslation.x = translationValue;
+                    } else if (anim.axis.y != 0) {
+                        localTranslation.y = translationValue;
+                    } else if (anim.axis.z != 0) {
+                        localTranslation.z = translationValue;
+                    }
+
+                    targetPos.add(localTranslation.copy().rotate(orientation));
+                }
+            }
+        }
+
+        return targetPos;
+    }
+
+    /**
      * Unified stub class for remote entities outside client render distance.
      * Used for radar contacts, radar tracking, and missile lock-on data.
      * Synced from server to client via PacketRadarSync.
@@ -685,6 +783,8 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
         public final StubType type;
         //Tracking data: velocity for radar contacts, distance for missiles
         public final double trackingData;
+        //Motion vector for leading targets - used by isLongRange missiles
+        public Point3D motion;
         //Timestamp of when this stub was last updated.
         //Used to detect stale stubs that are no longer being tracked.
         public long lastUpdateTick;
@@ -695,6 +795,16 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
             this.type = type;
             this.trackingData = trackingData;
             this.lastUpdateTick = 0;
+            this.motion = new Point3D();
+        }
+
+        public RemoteEntityStub(UUID uuid, Point3D position, StubType type, double trackingData, Point3D motion) {
+            super(null, position, new Point3D(), new Point3D());
+            this.entityUUID = uuid;
+            this.type = type;
+            this.trackingData = trackingData;
+            this.lastUpdateTick = 0;
+            this.motion = motion != null ? motion : new Point3D();
         }
 
         @Override

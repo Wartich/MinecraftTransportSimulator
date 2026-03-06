@@ -263,10 +263,20 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                             if (gun.engineTarget == null) {
                                 targetPosition = null;
                             }
+                            //For isLongRange bullets, use radar target position (with offset/animations)
+                            //For non-isLongRange bullets, use actual vehicle position
+                            if (definition.bullet.isLongRange && engineTargeted.vehicleOn != null) {
+                                Point3D radarPos = engineTargeted.vehicleOn.getRadarTargetPosition();
+                                if (radarPos != null && targetPosition != null) {
+                                    targetPosition.set(radarPos);
+                                }
+                            }
                             //Don't need to update the position variable for engines, as it auto-syncs.
                             //Do need to check if the engine is still warm and valid, however.
                             if (!engineTargeted.isValid) {// || engineTargeted.temp <= PartEngine.COLD_TEMP){
-                                engineTargeted.vehicleOn.missilesIncoming.remove(this);
+                                if (engineTargeted.vehicleOn != null) {
+                                    engineTargeted.vehicleOn.missilesIncoming.remove(this);
+                                }
                                 engineTargeted = null;
                                 targetPosition = null;
                             }
@@ -277,8 +287,9 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                                 targetPosition = null;
                             } else {
                                 // Update position from gun's tracking
+                                // For isLongRange bullets, this uses radar target position via gun's method
                                 Point3D newPos = gun.getTargetPositionByUUID(targetUUID);
-                                if (newPos != null) {
+                                if (newPos != null && targetPosition != null) {
                                     targetPosition.set(newPos);
                                 } else {
                                     targetUUID = null;
@@ -307,26 +318,52 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                             }
                         } else if (engineTargeted != null) {
                             normalizedConeVector.set(searchVector).normalize();
-                            normalizedEntityVector.set(engineTargeted.vehicleOn.position).subtract(startPoint).normalize();
-                            double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
-                            //Don't need to update the position variable for engines, as it auto-syncs.
-                            //Do need to check if the engine is still warm and valid, however.
-                            if (!engineTargeted.isValid || targetAngle > coneAngle || world.getBlockHit(startPoint, targetPosition) != null || targetPosition.distanceTo(position) > definition.bullet.seekerRange) {// || engineTargeted.temp <= PartEngine.COLD_TEMP){
-                                engineTargeted.vehicleOn.missilesIncoming.remove(this);
+                            //For isLongRange bullets, use radar target position for line-of-sight check
+                            Point3D enginePos = null;
+                            if (engineTargeted.vehicleOn != null) {
+                                enginePos = definition.bullet.isLongRange ? engineTargeted.vehicleOn.getRadarTargetPosition() : engineTargeted.vehicleOn.position;
+                            }
+                            if (enginePos == null) {
+                                // Lost target
+                                if (engineTargeted.vehicleOn != null) {
+                                    engineTargeted.vehicleOn.missilesIncoming.remove(this);
+                                }
                                 engineTargeted = null;
                                 targetPosition = null;
+                            } else {
+                                normalizedEntityVector.set(enginePos).subtract(startPoint).normalize();
+                                double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
+                                //Don't need to update the position variable for engines, as it auto-syncs.
+                                //Do need to check if the engine is still warm and valid, however.
+                                if (!engineTargeted.isValid || targetAngle > coneAngle || world.getBlockHit(startPoint, targetPosition) != null || targetPosition.distanceTo(position) > definition.bullet.seekerRange) {// || engineTargeted.temp <= PartEngine.COLD_TEMP){
+                                    if (engineTargeted.vehicleOn != null) {
+                                        engineTargeted.vehicleOn.missilesIncoming.remove(this);
+                                    }
+                                    engineTargeted = null;
+                                    targetPosition = null;
+                                }
                             }
                         } else if (targetUUID != null) {
                             // Tracking by UUID - can track beyond render distance
-                            // First try to find loaded entity
+                            // For isLongRange bullets, always use gun's target position (uses radar target position)
+                            // For non-isLongRange bullets, try loaded entity first, then fall back to gun's method
                             EntityVehicleF_Physics loadedVehicle = world.getEntity(targetUUID);
                             if (loadedVehicle != null && !loadedVehicle.outOfHealth) {
-                                // Found loaded entity, use its position
-                                targetPosition.set(loadedVehicle.position);
+                                // For isLongRange bullets, use radar target position
+                                // For non-isLongRange bullets, use actual position
+                                Point3D targetPos = definition.bullet.isLongRange ? loadedVehicle.getRadarTargetPosition() : loadedVehicle.position;
+                                if (targetPos != null && targetPosition != null) {
+                                    targetPosition.set(targetPos);
+                                } else {
+                                    // Lost target
+                                    targetUUID = null;
+                                    targetPosition = null;
+                                }
                             } else {
                                 // Use gun's tracking (radar stubs on client)
+                                // For isLongRange bullets, this returns radar target position
                                 Point3D newPos = gun.getTargetPositionByUUID(targetUUID);
-                                if (newPos != null) {
+                                if (newPos != null && targetPosition != null) {
                                     targetPosition.set(newPos);
                                 } else {
                                     // Lost target
@@ -339,7 +376,7 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                     }
                 }
 
-                if (targetPosition != null) {
+                 if (targetPosition != null) {
                     //Get the angular delta between us and our target, in our local orientation coordinates.
                     if (targetVector == null) {
                         targetVector = new Point3D();
@@ -692,6 +729,12 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
     }
 
     public static void performBlockHitLogic(PartGun gun, int bulletNumber, Point3D blockPosition, Axis blockSide) {
+        //Gun may be null if it hasn't been registered yet (e.g., chunk loading delays).
+        //In this case, just skip the hit logic as we can't determine bullet properties.
+        if (gun == null) {
+            return;
+        }
+
         //This is for block state-changes.  Particles and animations are handled in generic.
         if (!gun.world.isClient()) {
             InterfaceManager.packetInterface.sendToAllClients(new PacketEntityBulletHitBlock(gun, bulletNumber, blockPosition, blockSide));
@@ -722,6 +765,12 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
     }
 
     public static void performGenericHitLogic(PartGun gun, int bulletNumber, Point3D position, Axis hitSide, HitType hitType) {
+        //Gun may be null if it hasn't been registered yet (e.g., chunk loading delays).
+        //In this case, just skip the hit logic as we can't determine bullet properties.
+        if (gun == null) {
+            return;
+        }
+
         //Query up return packets first.  This ensures that we get to do this generic logic which spawns particles on clients before
         //any block-breaking packets arrive.
         if (!gun.world.isClient()) {

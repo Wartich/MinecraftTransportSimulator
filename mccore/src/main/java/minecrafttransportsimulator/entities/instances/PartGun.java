@@ -528,6 +528,9 @@ public class PartGun extends APart {
                                         if (!world.isClient() && lastLoadedBullet.definition.bullet.isLongRange) {
                                             // Get target position on server to include in sync packet
                                             Point3D targetPos = targetUUID != null ? getTargetPositionByUUID(targetUUID) : null;
+                                            // Convert angles before sending to ensure they're up-to-date
+                                            // (multiply() operations don't automatically update angles)
+                                            bulletOrientation.convertToAngles();
                                             InterfaceManager.packetInterface.sendToAllClients(new PacketPartGun(
                                                 this,
                                                 bulletPosition.copy(), bulletVelocity.copy(),
@@ -1521,8 +1524,29 @@ public class PartGun extends APart {
     }
 
     /**
-     * Gets the target position by UUID. On server, looks up the actual entity.
-     * On client, first tries actual entity, then falls back to radar stubs.
+     * Gets the position to use for targeting a vehicle.
+     * For isLongRange guns: uses radar target position (with offset/animations applied).
+     * For non-isLongRange guns: uses actual vehicle position.
+     * Returns null if target not found.
+     */
+    private Point3D getVehicleTargetPosition(EntityVehicleF_Physics vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+
+        // For isLongRange guns, always use radar target position (includes offset and animations)
+        // This ensures missiles target the offset position, making them miss if offset is large enough
+        if (definition.gun.isLongRange) {
+            return vehicle.getRadarTargetPosition();
+        }
+
+        // For non-isLongRange guns, use actual vehicle position
+        return vehicle.position.copy();
+    }
+
+    /**
+     * Gets the target position by UUID. For isLongRange guns, uses radar target position.
+     * For non-isLongRange guns, uses actual vehicle position.
      * Returns null if target not found.
      */
     public Point3D getTargetPositionByUUID(UUID targetUUID) {
@@ -1530,13 +1554,15 @@ public class PartGun extends APart {
             return null;
         }
 
-        // Try to find the actual entity first
+        // Try to find the actual entity
         EntityVehicleF_Physics vehicle = world.getEntity(targetUUID);
         if (vehicle != null) {
-            return vehicle.position.copy();
+            // Use radar target position for isLongRange guns, actual position for others
+            return getVehicleTargetPosition(vehicle);
         }
 
-        // On client, check radar stubs if entity not loaded
+        // Entity not loaded - check radar stubs (client-side only)
+        // Stubs already have radar target position applied
         if (world.isClient() && vehicleOn != null) {
             // Check aircraft stubs
             for (AEntityB_Existing contact : vehicleOn.aircraftOnRadar) {
@@ -1603,8 +1629,52 @@ public class PartGun extends APart {
     }
 
     /**
+     * Gets the target motion vector by UUID for leading calculations.
+     * On server, looks up the actual entity's motion.
+     * On client, first tries actual entity, then falls back to radar stubs which have motion vectors.
+     * Returns null if target not found.
+     */
+    public Point3D getTargetMotionByUUID(UUID targetUUID) {
+        if (targetUUID == null) {
+            return null;
+        }
+
+        // Try to find the actual entity first
+        EntityVehicleF_Physics vehicle = world.getEntity(targetUUID);
+        if (vehicle != null) {
+            return vehicle.motion.copy();
+        }
+
+        // On client, check radar stubs if entity not loaded
+        // Stubs have motion vectors synced from server for leading calculations
+        if (world.isClient() && vehicleOn != null) {
+            // Check aircraft stubs
+            for (AEntityB_Existing contact : vehicleOn.aircraftOnRadar) {
+                if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
+                    AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
+                    if (stub.entityUUID.equals(targetUUID)) {
+                        return stub.motion.copy();
+                    }
+                }
+            }
+            // Check grounder stubs
+            for (AEntityB_Existing contact : vehicleOn.groundersOnRadar) {
+                if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
+                    AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
+                    if (stub.entityUUID.equals(targetUUID)) {
+                        return stub.motion.copy();
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Finds a vehicle target and sets targetUUID. Used for DEFAULT and BORESIGHT lock-on types.
-     * This method first checks loaded entities, then falls back to radar stubs on client.
+     * For isLongRange guns: uses radar target position for lock-on (includes offset/animations).
+     * For non-isLongRange guns: uses actual vehicle position.
      * Returns the vehicle if found in loaded entities, null otherwise (but targetUUID may still be set from stubs).
      */
     private EntityVehicleF_Physics findAndSetTargetUUID(Point3D startPoint, Point3D searchVector, double coneAngle) {
@@ -1612,7 +1682,7 @@ public class PartGun extends APart {
         EntityVehicleF_Physics vehicleTarget = null;
         double smallestDistance = searchVector.length();
 
-        // First, check loaded entities (works on both server and client)
+        // Check loaded entities (works on both server and client)
         for (EntityVehicleF_Physics vehicle : world.getEntitiesOfType(EntityVehicleF_Physics.class)) {
             // Make sure we don't lock-on to our own vehicle
             if (vehicle != vehicleOn && !vehicle.outOfHealth) {
@@ -1622,12 +1692,17 @@ public class PartGun extends APart {
                     continue;
                 }
 
-                targetVector.set(vehicle.position).subtract(startPoint);
+                // Get the position to use for targeting
+                // For isLongRange: use radar target position (with offset/animations)
+                // For non-isLongRange: use actual vehicle position
+                Point3D targetPos = getVehicleTargetPosition(vehicle);
+
+                targetVector.set(targetPos).subtract(startPoint);
                 if (world.getBlockHit(startPoint, targetVector) == null) {
-                    double entityDistance = vehicle.position.distanceTo(startPoint);
+                    double entityDistance = targetPos.distanceTo(startPoint);
                     if (entityDistance < smallestDistance) {
                         // Potential match by distance, check if the entity is inside the cone
-                        normalizedEntityVector.set(vehicle.position).subtract(startPoint).normalize();
+                        normalizedEntityVector.set(targetPos).subtract(startPoint).normalize();
                         double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
                         if (targetAngle < coneAngle) {
                             smallestDistance = entityDistance;

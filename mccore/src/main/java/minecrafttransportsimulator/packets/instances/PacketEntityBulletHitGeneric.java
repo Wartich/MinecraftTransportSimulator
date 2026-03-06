@@ -53,6 +53,11 @@ public class PacketEntityBulletHitGeneric extends APacketBase {
 
     @Override
     public void handle(AWrapperWorld world) {
-        EntityBullet.performGenericHitLogic(world.getBulletGun(gunID), bulletNumber, position, hitSide, hitType);
+        PartGun gun = world.getBulletGun(gunID);
+        //Gun may be null if it hasn't been registered yet (e.g., chunk loading delays).
+        //performGenericHitLogic handles this, but we check here to avoid unnecessary object creation.
+        if (gun != null) {
+            EntityBullet.performGenericHitLogic(gun, bulletNumber, position, hitSide, hitType);
+        }
     }
 }

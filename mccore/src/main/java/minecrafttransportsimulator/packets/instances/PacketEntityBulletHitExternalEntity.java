@@ -46,6 +46,12 @@ public class PacketEntityBulletHitExternalEntity extends APacketBase {
     @Override
     public void handle(AWrapperWorld world) {
         PartGun gun = world.getBulletGun(gunID);
+        //Gun may be null if it hasn't been registered yet (e.g., chunk loading delays).
+        //In this case, skip the hit logic.
+        if (gun == null) {
+            return;
+        }
+
         IWrapperEntity entity = world.getExternalEntity(entityID);
         if (entity != null) {
             EntityBullet.performExternalEntityHitLogic(entity, new Damage(gun, entity.getBounds(), amount));

@@ -3,6 +3,7 @@ package minecrafttransportsimulator.jsondefs;
 import java.util.List;
 
 import minecrafttransportsimulator.baseclasses.ColorRGB;
+import minecrafttransportsimulator.baseclasses.Point3D;
 import minecrafttransportsimulator.packloading.JSONParser.JSONDescription;
 import minecrafttransportsimulator.packloading.JSONParser.JSONRequired;
 
@@ -54,6 +55,9 @@ public abstract class AJSONItem extends AJSONBase {
 
         @JSONDescription("How far away this radar can detect things, in blocks.")
         public double radarRange;
+
+        @JSONDescription("Defines where this vehicle appears on radars and where missiles target it. Position is offset from vehicle center, animations can move it or make the vehicle invisible to radar.")
+        public JSONRadarTarget radarTarget;
 
         //Moved from multiple locations.
         //Vehicle was deprecated for vehicle type.
@@ -129,5 +133,17 @@ public abstract class AJSONItem extends AJSONBase {
 
         @Deprecated
         public List<String> repairMaterials;
+    }
+
+    /**
+     * Class for radar target configuration.
+     * Defines where a vehicle appears on radars and where missiles target it.
+     */
+    public static class JSONRadarTarget {
+        @JSONDescription("Position offset from vehicle center where the radar target point is located.")
+        public Point3D pos;
+
+        @JSONDescription("Animations that affect the radar target. Translation moves the target point, visibility makes the vehicle invisible to radar.")
+        public List<JSONAnimationDefinition> animations;
     }
 }
