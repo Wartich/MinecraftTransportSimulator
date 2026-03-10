@@ -1492,29 +1492,11 @@ public class PartGun extends APart {
     }
 
     /**
-     * Unregisters this gun from the previous target vehicle's gunsLockedOn list.
-     */
-    private void unregisterFromPreviousTargetVehicle() {
-        // Unregister from previous engine target vehicle
-        if (prevEngineTarget != null && prevEngineTarget.vehicleOn != null && prevEngineTarget.vehicleOn != vehicleOn) {
-            prevEngineTarget.vehicleOn.gunsLockedOn.remove(this);
-        }
-        // Unregister from previous targetUUID vehicle
-        if (prevTargetUUID != null && vehicleOn != null && !prevTargetUUID.equals(vehicleOn.uniqueUUID)) {
-            EntityVehicleF_Physics prevTargetVehicle = world.getEntity(prevTargetUUID);
-            if (prevTargetVehicle != null) {
-                prevTargetVehicle.gunsLockedOn.remove(this);
-            }
-        }
-    }
-
-    /**
      * Updates target registration. Call this whenever entityTarget, engineTarget, or targetUUID changes.
      */
     public void updateTargetRegistration() {
         // Check if engine target changed or targetUUID changed (including to/from null)
         if (engineTarget != prevEngineTarget || !java.util.Objects.equals(targetUUID, prevTargetUUID)) {
-            unregisterFromPreviousTargetVehicle();
             prevEngineTarget = engineTarget;
             prevTargetUUID = targetUUID;
             registerWithTargetVehicle();
