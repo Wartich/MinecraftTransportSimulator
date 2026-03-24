@@ -201,7 +201,9 @@ public abstract class AEntityVehicleE_Powered extends AEntityVehicleD_Moving {
 
         //Check to make sure we are still being tracked.
         radarsTracking.removeIf(tracker -> !tracker.isValid || (!tracker.aircraftOnRadar.contains(this) && !tracker.groundersOnRadar.contains(this)));
-        gunsLockedOn.removeIf(gun -> !gun.isValid || gun.engineTarget == null || gun.engineTarget.vehicleOn != this || (gun.targetUUID != null && !gun.targetUUID.equals(uniqueUUID)));
+        gunsLockedOn.removeIf(gun -> !gun.isValid || 
+            (gun.definition.gun.isLongRange && (gun.targetUUID == null || !gun.targetUUID.equals(uniqueUUID))) ||
+            (!gun.definition.gun.isLongRange && (gun.engineTarget == null || gun.engineTarget.vehicleOn != this)));
 
         //If we are supposed to de-spawn, do so.
         if (outOfHealth && ConfigSystem.settings.general.vehicleDeathDespawnTime.value > 0) {

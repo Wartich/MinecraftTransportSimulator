@@ -943,7 +943,6 @@ public class PartGun extends APart {
                 updateTargetRegistration();
 
                 //For isLongRange guns, sync targetUUID to server whenever it changes.
-                //This handles both gaining a new target and losing an existing target.
                 if (definition.gun.isLongRange && world.isClient() && !java.util.Objects.equals(targetUUID, oldTargetUUID)) {
                     if (ConfigSystem.settings.general.devMode.value) {
                         String oldTarget = oldTargetUUID != null ? oldTargetUUID.toString().substring(0, 8) : "NONE";
@@ -951,35 +950,32 @@ public class PartGun extends APart {
                         InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->SERVER SYNC | Old:" + oldTarget + " -> New:" + newTarget);
                     }
                     InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, targetUUID));
+                }
 
-                    // Also sync lockon count to the target vehicle so missile_lockedonto works
-                    // Count all guns on our vehicle that have locked onto each target
-                    if (vehicleOn != null) {
-                        java.util.Map<java.util.UUID, Integer> lockonCounts = new java.util.HashMap<>();
-                        for (APart part : vehicleOn.allParts) {
-                            if (part instanceof PartGun) {
-                                PartGun gun = (PartGun) part;
-                                if (gun.definition.gun.isLongRange && gun.targetUUID != null) {
-                                    lockonCounts.merge(gun.targetUUID, 1, Integer::sum);
-                                }
+                //For isLongRange guns, sync lockon count every 20 ticks for missile_lockedonto.
+                if (definition.gun.isLongRange && world.isClient() && vehicleOn != null) {
+                    java.util.Map<java.util.UUID, Integer> lockonCounts = new java.util.HashMap<>();
+                    for (APart part : vehicleOn.allParts) {
+                        if (part instanceof PartGun) {
+                            PartGun gun = (PartGun) part;
+                            if (gun.definition.gun.isLongRange && gun.targetUUID != null) {
+                                lockonCounts.merge(gun.targetUUID, 1, Integer::sum);
                             }
                         }
+                    }
 
-                        // Send counts to all targets we're tracking
-                        for (java.util.Map.Entry<java.util.UUID, Integer> entry : lockonCounts.entrySet()) {
-                            if (ConfigSystem.settings.general.devMode.value) {
-                                InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + entry.getKey().toString().substring(0, 8) + " | Count:" + entry.getValue());
-                            }
-                            InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, entry.getKey(), entry.getValue()));
+                    for (java.util.Map.Entry<java.util.UUID, Integer> entry : lockonCounts.entrySet()) {
+                        if (ConfigSystem.settings.general.devMode.value) {
+                            InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + entry.getKey().toString().substring(0, 8) + " | Count:" + entry.getValue());
                         }
+                        InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, entry.getKey(), entry.getValue()));
+                    }
 
-                        // If we lost target, send 0 to old target (if not already in the map)
-                        if (oldTargetUUID != null && !java.util.Objects.equals(oldTargetUUID, targetUUID) && !lockonCounts.containsKey(oldTargetUUID)) {
-                            if (ConfigSystem.settings.general.devMode.value) {
-                                InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + oldTargetUUID.toString().substring(0, 8) + " | Count:0");
-                            }
-                            InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, oldTargetUUID, 0));
+                    if (oldTargetUUID != null && !java.util.Objects.equals(oldTargetUUID, targetUUID) && !lockonCounts.containsKey(oldTargetUUID)) {
+                        if (ConfigSystem.settings.general.devMode.value) {
+                            InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + oldTargetUUID.toString().substring(0, 8) + " | Count:0");
                         }
+                        InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, oldTargetUUID, 0));
                     }
                 }
             }
@@ -1475,14 +1471,14 @@ public class PartGun extends APart {
      * Registers this gun with the target vehicle's gunsLockedOn list.
      */
     private void registerWithTargetVehicle() {
-        // Register via engineTarget if available
+        //Register via engineTarget if available.
         if (engineTarget != null && engineTarget.vehicleOn != null && engineTarget.vehicleOn != vehicleOn) {
             AEntityVehicleE_Powered targetVehicle = engineTarget.vehicleOn;
             if (!targetVehicle.gunsLockedOn.contains(this)) {
                 targetVehicle.gunsLockedOn.add(this);
             }
         }
-        // Register via targetUUID if available (for targets beyond render distance)
+        //Register via targetUUID if available (for targets beyond render distance).
         if (targetUUID != null && vehicleOn != null && !targetUUID.equals(vehicleOn.uniqueUUID)) {
             EntityVehicleF_Physics targetVehicle = world.getEntity(targetUUID);
             if (targetVehicle != null && !targetVehicle.gunsLockedOn.contains(this)) {
