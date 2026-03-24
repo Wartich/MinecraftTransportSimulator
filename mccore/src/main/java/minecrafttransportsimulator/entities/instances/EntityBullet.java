@@ -26,6 +26,7 @@ import minecrafttransportsimulator.mcinterface.AWrapperWorld;
 import minecrafttransportsimulator.mcinterface.IWrapperEntity;
 import minecrafttransportsimulator.mcinterface.IWrapperPlayer;
 import minecrafttransportsimulator.mcinterface.InterfaceManager;
+import minecrafttransportsimulator.packloading.PackParser;
 import minecrafttransportsimulator.packets.instances.PacketEntityBulletHitBlock;
 import minecrafttransportsimulator.packets.instances.PacketEntityBulletHitExternalEntity;
 import minecrafttransportsimulator.packets.instances.PacketEntityBulletHitGeneric;
@@ -132,6 +133,75 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
         displayDebugMessage("LOCKON ENTITY " + externalEntityTargeted.getName() + " @ " + externalEntityTargeted.getPosition());
     }
 
+<<<<<<< Updated upstream
+=======
+    /**
+     * UUID target for vehicles beyond render distance.
+     * Used when gun has targetUUID but no loaded entity.
+     **/
+    public EntityBullet(Point3D position, Point3D motion, RotationMatrix orientation, PartGun gun, int bulletNumber, UUID targetUUID) {
+        this(position, motion, orientation, gun, bulletNumber);
+        this.targetUUID = targetUUID;
+        // Try to get initial position from radar stubs or loaded entity
+        Point3D initialTargetPos = gun.getTargetPositionByUUID(targetUUID);
+        if (initialTargetPos != null) {
+            this.targetPosition = initialTargetPos;
+            // Register missile in target's missilesIncoming list
+            EntityVehicleF_Physics targetVehicle = gun.world.getEntity(targetUUID);
+            if (targetVehicle != null) {
+                targetVehicle.missilesIncoming.add(this);
+            }
+            displayDebugMessage("LOCKON UUID " + targetUUID + " @ " + targetPosition);
+        }
+    }
+
+    /**
+     * UUID target with pre-known position for vehicles beyond render distance.
+     * Used when gun has targetUUID and we already have the position (from server).
+     * This ensures bullets can lock on even when the target entity isn't loaded on client.
+     **/
+    public EntityBullet(Point3D position, Point3D motion, RotationMatrix orientation, PartGun gun, int bulletNumber, UUID targetUUID, Point3D targetPos) {
+        this(position, motion, orientation, gun, bulletNumber);
+        this.targetUUID = targetUUID;
+        if (targetPos != null) {
+            this.targetPosition = targetPos.copy();
+            // Register missile in target's missilesIncoming list
+            EntityVehicleF_Physics targetVehicle = gun.world.getEntity(targetUUID);
+            if (targetVehicle != null) {
+                targetVehicle.missilesIncoming.add(this);
+            }
+            displayDebugMessage("LOCKON UUID " + targetUUID + " @ " + targetPosition);
+        }
+    }
+
+    /**
+     * Cluster bullet constructor with explicit bullet definition.
+     * Used for spawning sub-bullets with a different bullet type than the gun's lastLoadedBullet.
+     **/
+    public EntityBullet(Point3D position, Point3D motion, RotationMatrix orientation, PartGun gun, int bulletNumber, ItemBullet bulletItem) {
+        super(gun.world, position, motion, ZERO_FOR_CONSTRUCTOR, bulletItem);
+        this.gun = gun;
+        this.bulletNumber = bulletNumber;
+        gun.currentBullet = this;
+        this.isBomb = gun.definition.gun.muzzleVelocity == 0;
+        this.boundingBox.widthRadius = definition.bullet.diameter / 1000D / 2D;
+        this.boundingBox.heightRadius = definition.bullet.diameter / 1000D / 2D;
+        this.boundingBox.depthRadius = definition.bullet.diameter / 1000D / 2D;
+        this.initialVelocity = motion.length();
+        if (definition.bullet.accelerationTime > 0) {
+            velocityToAddEachTick = (definition.bullet.maxVelocity / 20D - motion.length()) / definition.bullet.accelerationTime;
+            this.motionToAddEachTick = new Point3D(0, 0, velocityToAddEachTick).rotate(gun.orientation);
+        } else {
+            velocityToAddEachTick = 0;
+            motionToAddEachTick = null;
+        }
+        this.despawnTime = definition.bullet.despawnTime != 0 ? definition.bullet.despawnTime : 200;
+        this.proxBounds = definition.bullet.proximityFuze != 0 ? new BoundingBox(position.copy(), definition.bullet.proximityFuze) : null;
+        this.orientation.set(orientation);
+        prevOrientation.set(orientation);
+    }
+
+>>>>>>> Stashed changes
     @Override
     public void update() {
         super.update();
@@ -645,22 +715,92 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
         }
         EntityBullet bullet = gun.world.getBullet(gun.uniqueUUID, bulletNumber);
 
+        //Spawn cluster sub-bullets if configured. Spawn on client only, like regular bullets.
+        //Check if bullet entity exists and has cluster properties to prevent recursion.
+        if (gun.world.isClient() && bullet != null && bullet.definition.bullet.clusterBullet != null) {
+            String[] clusterBulletParts = bullet.definition.bullet.clusterBullet.split(":");
+            if (clusterBulletParts.length == 2) {
+                ItemBullet clusterBullet = PackParser.getItem(clusterBulletParts[0], clusterBulletParts[1]);
+                if (clusterBullet != null) {
+                    int pelletCount = bullet.definition.bullet.clusterPellets > 0 ? bullet.definition.bullet.clusterPellets : 1;
+                    Point3D spawnPosition = position.copy();
+                    if (hitType == HitType.BLOCK) {
+                        spawnPosition.add(hitSide.xOffset * 0.1, hitSide.yOffset * 0.1, hitSide.zOffset * 0.1);
+                    }
+
+                    for (int i = 0; i < pelletCount; i++) {
+                        Point3D subBulletVelocity;
+                        RotationMatrix subBulletOrientation = new RotationMatrix();
+                        boolean useWorldOrientation = bullet.definition.bullet.clusterOrientation == JSONBullet.ClusterOrientation.WORLD;
+
+                        if (bullet.definition.bullet.clusterVelocity != null) {
+                            //Use specified velocity
+                            subBulletVelocity = bullet.definition.bullet.clusterVelocity.copy().scale(1.0 / 20D);
+                            //Add random spread
+                            if (bullet.definition.bullet.clusterSpread != null) {
+                                subBulletVelocity.x += bullet.definition.bullet.clusterSpread.x * (Math.random() * 2 - 1) / 20D;
+                                subBulletVelocity.y += bullet.definition.bullet.clusterSpread.y * (Math.random() * 2 - 1) / 20D;
+                                subBulletVelocity.z += bullet.definition.bullet.clusterSpread.z * (Math.random() * 2 - 1) / 20D;
+                            }
+                            //Rotate to parent bullet's orientation if BULLET mode
+                            if (!useWorldOrientation) {
+                                subBulletVelocity.rotate(bullet.orientation);
+                            }
+                            subBulletOrientation.setToVector(subBulletVelocity, false);
+                        } else {
+                            //Inherit parent bullet's velocity
+                            subBulletVelocity = bullet.motion.copy();
+                            //Add random spread if specified
+                            if (bullet.definition.bullet.clusterSpread != null) {
+                                Point3D spread = bullet.definition.bullet.clusterSpread.copy().scale(1.0 / 20D);
+                                spread.x *= (Math.random() * 2 - 1);
+                                spread.y *= (Math.random() * 2 - 1);
+                                spread.z *= (Math.random() * 2 - 1);
+                                //Rotate spread by parent orientation if BULLET mode, otherwise use world space
+                                if (!useWorldOrientation) {
+                                    spread.rotate(bullet.orientation);
+                                }
+                                subBulletVelocity.add(spread);
+                            }
+                            subBulletOrientation.setToVector(subBulletVelocity, false);
+                        }
+
+                        int subBulletNumber = bulletNumber * 1000 + i;
+                        EntityBullet subBullet = new EntityBullet(spawnPosition.copy(), subBulletVelocity, subBulletOrientation, gun, subBulletNumber, clusterBullet);
+                        gun.world.addEntity(subBullet);
+                        //Store bullet definition for server-side hit logic
+                        gun.bulletDefinitions.put(subBulletNumber, clusterBullet);
+                    }
+                }
+            }
+        }
+
         //Spawn an explosion if we are an explosive bullet on the server.
+        //Use bullet's definition if available, otherwise check gun's bulletDefinitions map, otherwise fall back to gun's lastLoadedBullet.
         if (!gun.world.isClient() && ConfigSystem.settings.damage.bulletExplosions.value) {
-            if (gun.lastLoadedBullet.definition.bullet.types.contains(BulletType.EXPLOSIVE)) {
-                float blastSize = gun.lastLoadedBullet.definition.bullet.blastStrength == 0 ? gun.lastLoadedBullet.definition.bullet.diameter / 10F : gun.lastLoadedBullet.definition.bullet.blastStrength;
+            JSONBullet bulletDef;
+            if (bullet != null) {
+                bulletDef = bullet.definition;
+            } else if (gun.bulletDefinitions.containsKey(bulletNumber)) {
+                bulletDef = gun.bulletDefinitions.get(bulletNumber).definition;
+            } else {
+                bulletDef = gun.lastLoadedBullet.definition;
+            }
+            
+            if (bulletDef.bullet.types.contains(BulletType.EXPLOSIVE)) {
+                float blastSize = bulletDef.bullet.blastStrength == 0 ? bulletDef.bullet.diameter / 10F : bulletDef.bullet.blastStrength;
                 Point3D explosionPosition = position.copy();
                 if (hitType == HitType.BLOCK) {
                     explosionPosition.add(hitSide.xOffset, hitSide.yOffset, hitSide.zOffset);
                 }
-                gun.world.spawnExplosion(explosionPosition, blastSize, gun.lastLoadedBullet.definition.bullet.types.contains(BulletType.INCENDIARY) && ConfigSystem.settings.damage.bulletBlockBreaking.value, ConfigSystem.settings.damage.bulletBlockBreaking.value);
+                gun.world.spawnExplosion(explosionPosition, blastSize, bulletDef.bullet.types.contains(BulletType.INCENDIARY) && ConfigSystem.settings.damage.bulletBlockBreaking.value, ConfigSystem.settings.damage.bulletBlockBreaking.value);
                 if (bullet != null) {
                     bullet.displayDebugMessage("SPAWNING EXPLOSION AT " + explosionPosition);
                 }
             }
 
-            if (gun.lastLoadedBullet.definition.bullet.types.contains(BulletType.CUSTOM)) {
-                List<String> functions = gun.lastLoadedBullet.definition.bullet.customHitFunctions;
+            if (bulletDef.bullet.types.contains(BulletType.CUSTOM)) {
+                List<String> functions = bulletDef.bullet.customHitFunctions;
                 for (String function : functions) {
                     if (CUSTOM_HIT_FUNCTIONS.containsKey(function))
                         CUSTOM_HIT_FUNCTIONS.get(function).execute(gun.world, position, hitSide, hitType, gun.lastLoadedBullet);

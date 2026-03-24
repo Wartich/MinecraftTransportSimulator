@@ -1,8 +1,10 @@
 package minecrafttransportsimulator.entities.instances;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
@@ -99,6 +101,7 @@ public class PartGun extends APart {
     private final List<ItemBullet> reloadingBullets = new ArrayList<>();
     private final List<Integer> reloadingBulletCounts = new ArrayList<>();
     private final Random randomGenerator;
+    public final Map<Integer, ItemBullet> bulletDefinitions = new HashMap<>();
 
     //These variables are used during firing and will be reset on loading.
     public GunState state;

@@ -2,6 +2,7 @@ package minecrafttransportsimulator.jsondefs;
 
 import java.util.List;
 
+import minecrafttransportsimulator.baseclasses.Point3D;
 import minecrafttransportsimulator.packloading.JSONParser.JSONDescription;
 import minecrafttransportsimulator.packloading.JSONParser.JSONRequired;
 
@@ -101,6 +102,21 @@ public class JSONBullet extends AJSONMultiModelProvider {
         @JSONDescription("How much spread the pellets will have when fired. 0 is no spread, higher values have higher spread.")
         public float pelletSpreadFactor;
 
+        @JSONDescription("If set, this bullet will spawn sub-bullets on impact. Format is packID:bulletName.")
+        public String clusterBullet;
+
+        @JSONDescription("Number of sub-bullets to spawn on impact. Defaults to 1 if not specified.")
+        public int clusterPellets;
+
+        @JSONDescription("Defines whether cluster bullets spawn relative to the parent bullet's orientation or world orientation. Defaults to BULLET if not specified.")
+        public ClusterOrientation clusterOrientation;
+
+        @JSONDescription("Initial velocity for spawned sub-bullets in m/s, where +Z is forward relative to clusterOrientation. If not specified, sub-bullets inherit parent bullet's velocity.")
+        public Point3D clusterVelocity;
+
+        @JSONDescription("Random spread to add to clusterVelocity, multiplied by a random value between -1 and 1 for each axis.")
+        public Point3D clusterSpread;
+
         @JSONDescription("The model of the casing to use for the casing particle, or null if no model is to be used.")
         public String casingModel;
 
@@ -131,6 +147,13 @@ public class JSONBullet extends AJSONMultiModelProvider {
         SEMI_ACTIVE,
         @JSONDescription("Default method. Tracks whatever target the gun was locked on to prior to firing.")
         ACTIVE
+    }
+
+    public enum ClusterOrientation {
+        @JSONDescription("Cluster bullets spawn relative to the parent bullet's orientation. +Z is forward from parent bullet direction.")
+        BULLET,
+        @JSONDescription("Cluster bullets spawn relative to world orientation. +Z is north, +Y is up, +X is east.")
+        WORLD
     }
     
 }
