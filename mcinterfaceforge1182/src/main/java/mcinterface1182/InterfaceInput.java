@@ -20,6 +20,7 @@ import minecrafttransportsimulator.mcinterface.IInterfaceInput;
 import minecrafttransportsimulator.mcinterface.InterfaceManager;
 import minecrafttransportsimulator.packloading.JSONParser;
 import minecrafttransportsimulator.systems.ConfigSystem;
+import minecrafttransportsimulator.systems.ControlSystem;
 import minecrafttransportsimulator.systems.ControlSystem.ControlsJoystick;
 import minecrafttransportsimulator.systems.LanguageSystem;
 import net.minecraft.client.KeyMapping;
@@ -151,6 +152,8 @@ public class InterfaceInput implements IInterfaceInput {
         switch (name) {
             case "RSHIFT":
                 return InputConstants.getKey("key.keyboard.right.shift").getValue();
+            case "LMENU":
+                return InputMappings.getKey("key.keyboard.left.alt").getValue();
             case "PRIOR":
                 return InputConstants.getKey("key.keyboard.page.up").getValue();
             case "NEXT":
@@ -282,6 +285,10 @@ public class InterfaceInput implements IInterfaceInput {
      */
     @SubscribeEvent
     public static void onIVKeyInput(KeyInputEvent event) {
+        if (event.getAction() == GLFW.GLFW_PRESS && event.getKey() == GLFW.GLFW_KEY_ESCAPE) {
+            ControlSystem.resetMouseYoke();
+        }
+
         //Check if we pressed the config or import key.
         if (configKey.isDown() && !InterfaceManager.clientInterface.isGUIOpen()) {
             new GUIConfig();

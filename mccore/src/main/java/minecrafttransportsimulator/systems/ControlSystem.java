@@ -50,6 +50,10 @@ public final class ControlSystem {
     private static double throttleRequestLastCheck;
     private static double brakeRequestLastCheck;
 
+    private static boolean mouseYokeEnabledLastCall;
+    private static double mouseYokePosX = Double.NaN;
+    private static double mouseYokePosY = Double.NaN;
+
     private static EntityInteractResult interactResult = null;
 
     /**
@@ -102,6 +106,25 @@ public final class ControlSystem {
         }
     }
 
+    public static void resetMouseYoke() {
+        mouseYokePosX = Double.NaN;
+        mouseYokePosY = Double.NaN;
+    }
+
+    public static void setMouseYokeEnabled(boolean enabled, boolean displayMessage) {
+        ConfigSystem.client.controlSettings.mouseYoke.value = enabled;
+        ConfigSystem.saveToDisk();
+        resetMouseYoke();
+        mouseYokeEnabledLastCall = enabled;
+        if (displayMessage && InterfaceManager.clientInterface != null) {
+            InterfaceManager.clientInterface.displayOverlayMessage((enabled ? LanguageSystem.INTERACT_MOUSEYOKE_ENABLED : LanguageSystem.INTERACT_MOUSEYOKE_DISABLED).getCurrentValue());
+        }
+    }
+
+    public static void toggleMouseYoke() {
+        setMouseYokeEnabled(!ConfigSystem.client.controlSettings.mouseYoke.value, true);
+    }
+
     private static void handleClick(IWrapperPlayer player, EntityPlayerGun playerGun, boolean leftClickDown, boolean leftClickUp, boolean rightClickDown, boolean rightClickUp) {
         //Either change the gun trigger state (if we are holding a gun),
         //or try to interact with entities if we are not.
@@ -131,12 +154,12 @@ public final class ControlSystem {
         }
     }
 
-    public static void controlMultipart(AEntityF_Multipart<?> multipart, boolean isPlayerController) {
+    public static void controlMultipart(AEntityF_Multipart<?> multipart, boolean isPlayerController, double mouseXDelta, double mouseYDelta) {
         clientPlayer = InterfaceManager.clientInterface.getClientPlayer();
         if (multipart instanceof EntityVehicleF_Physics) {
             EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) multipart;
             if (vehicle.definition.motorized.isAircraft) {
-                controlAircraft(vehicle, isPlayerController);
+                controlAircraft(vehicle, isPlayerController, mouseXDelta, mouseYDelta);
             } else {
                 controlGroundVehicle(vehicle, isPlayerController);
             }
@@ -189,6 +212,13 @@ public final class ControlSystem {
                 riding.headTrackingOrientation.x = -(viewUD.getAxisState(true) - 0.5) * 170;
                 riding.headTrackingOrientation.y = -(viewLR.getAxisState(true) - 0.5) * 180;
             }
+        }
+    }
+
+    private static void controlFreecam(ControlsKeyboard camLock) {
+        if (camLock.isPressed()) {
+            ConfigSystem.client.renderingSettings.freecam_3P.value = !ConfigSystem.client.renderingSettings.freecam_3P.value;
+            ConfigSystem.saveToDisk();
         }
     }
 
@@ -321,16 +351,70 @@ public final class ControlSystem {
         }
     }
 
-    private static void controlAircraft(EntityVehicleF_Physics aircraft, boolean isPlayerController) {
+    private static boolean controlMouseYoke(EntityVehicleF_Physics aircraft, double mouseXDelta, double mouseYDelta) {
+        if (ConfigSystem.client.controlSettings.mouseYoke.value != mouseYokeEnabledLastCall) {
+            resetMouseYoke();
+            mouseYokeEnabledLastCall = ConfigSystem.client.controlSettings.mouseYoke.value;
+        }
+        if (!ConfigSystem.client.controlSettings.mouseYoke.value) {
+            return false;
+        }
+
+        long packedDisplaySize = InterfaceManager.clientInterface.getPackedDisplaySize();
+        int screenWidth = (int) (packedDisplaySize >> Integer.SIZE);
+        int screenHeight = (int) packedDisplaySize;
+        if (screenWidth <= 0 || screenHeight <= 0) {
+            return false;
+        }
+
+        double halfWidth = screenWidth / 2D;
+        double halfHeight = screenHeight / 2D;
+        if (Double.isNaN(mouseYokePosX) || Double.isNaN(mouseYokePosY)) {
+            mouseYokePosX = halfWidth;
+            mouseYokePosY = halfHeight;
+        }
+
+        double pitchBounds = EntityVehicleF_Physics.MAX_ELEVATOR_ANGLE;
+        double rollBounds = aircraft.definition.motorized.isBlimp ? EntityVehicleF_Physics.MAX_RUDDER_ANGLE : EntityVehicleF_Physics.MAX_AILERON_ANGLE;
+        double mouseRate = ConfigSystem.client.controlSettings.mouseYokeRate.value;
+        if (mouseRate > 0) {
+            mouseYokePosX += mouseXDelta * mouseRate * halfWidth / rollBounds;
+            mouseYokePosY += mouseYDelta * mouseRate * halfHeight / pitchBounds;
+        }
+
+        mouseYokePosX = Math.max(0, Math.min(screenWidth, mouseYokePosX));
+        mouseYokePosY = Math.max(0, Math.min(screenHeight, mouseYokePosY));
+
+        double rollInput = rollBounds * (halfWidth - mouseYokePosX) / halfWidth;
+        double pitchInput = pitchBounds * (mouseYokePosY - halfHeight) / halfHeight;
+
+        ComputedVariable rollVariable = aircraft.definition.motorized.isBlimp ? aircraft.rudderInputVar : aircraft.aileronInputVar;
+        if (Math.abs(rollInput - rollVariable.currentValue) > 0.001) {
+            InterfaceManager.packetInterface.sendToServer(new PacketEntityVariableSet(rollVariable, rollInput));
+        }
+        if (Math.abs(pitchInput - aircraft.elevatorInputVar.currentValue) > 0.001) {
+            InterfaceManager.packetInterface.sendToServer(new PacketEntityVariableSet(aircraft.elevatorInputVar, pitchInput));
+        }
+        return true;
+    }
+
+    private static void controlAircraft(EntityVehicleF_Physics aircraft, boolean isPlayerController, double mouseXDelta, double mouseYDelta) {
         controlCamera(ControlsKeyboard.AIRCRAFT_ZOOM_I, ControlsKeyboard.AIRCRAFT_ZOOM_O, ControlsKeyboard.AIRCRAFT_CHANGEVIEW, ControlsJoystick.AIRCRAFT_LOOK_UD, ControlsJoystick.AIRCRAFT_LOOK_LR);
         rotateCamera(ControlsJoystick.AIRCRAFT_LOOK_R, ControlsJoystick.AIRCRAFT_LOOK_L, ControlsJoystick.AIRCRAFT_LOOK_U, ControlsJoystick.AIRCRAFT_LOOK_D, ControlsJoystick.AIRCRAFT_LOOK_A);
+        controlFreecam(ControlsKeyboard.AIRCRAFT_CAMLOCK);
         controlGun(aircraft, ControlsKeyboard.AIRCRAFT_GUN_FIRE, ControlsKeyboard.AIRCRAFT_GUN_SWITCH);
         controlRadio(aircraft, ControlsKeyboard.AIRCRAFT_RADIO);
         controlJoystick(aircraft, ControlsKeyboard.AIRCRAFT_JS_INHIBIT);
 
         if (!isPlayerController) {
+            resetMouseYoke();
             return;
         }
+
+        if (ControlsKeyboard.AIRCRAFT_MOUSEYOKE.isPressed()) {
+            toggleMouseYoke();
+        }
+
         //Open or close the panel.
         controlPanel(aircraft, ControlsKeyboard.AIRCRAFT_PANEL);
 
@@ -400,15 +484,21 @@ public final class ControlSystem {
             controlControlTrim(aircraft, ControlsJoystick.AIRCRAFT_TRIM_YAW_R, ControlsJoystick.AIRCRAFT_TRIM_YAW_L, EntityVehicleF_Physics.MAX_RUDDER_TRIM, aircraft.rudderTrimVar);
         }
 
+        boolean usingMouseYoke = controlMouseYoke(aircraft, mouseXDelta, mouseYDelta);
+
         //Check pitch.
-        controlControlSurface(aircraft, ControlsJoystick.AIRCRAFT_PITCH, ControlsKeyboard.AIRCRAFT_PITCH_U, ControlsKeyboard.AIRCRAFT_PITCH_D, ConfigSystem.client.controlSettings.flightControlRate.value, EntityVehicleF_Physics.MAX_ELEVATOR_ANGLE, aircraft.elevatorInputVar, EntityVehicleF_Physics.ELEVATOR_DAMPEN_RATE);
+        if (!usingMouseYoke) {
+            controlControlSurface(aircraft, ControlsJoystick.AIRCRAFT_PITCH, ControlsKeyboard.AIRCRAFT_PITCH_U, ControlsKeyboard.AIRCRAFT_PITCH_D, ConfigSystem.client.controlSettings.flightControlRate.value, EntityVehicleF_Physics.MAX_ELEVATOR_ANGLE, aircraft.elevatorInputVar, EntityVehicleF_Physics.ELEVATOR_DAMPEN_RATE);
+        }
         controlControlTrim(aircraft, ControlsJoystick.AIRCRAFT_TRIM_PITCH_U, ControlsJoystick.AIRCRAFT_TRIM_PITCH_D, EntityVehicleF_Physics.MAX_ELEVATOR_TRIM, aircraft.elevatorTrimVar);
 
         //Check roll.  Blimps use roll for rudder for steering.
-        if (aircraft.definition.motorized.isBlimp) {
-            controlControlSurface(aircraft, ControlsJoystick.AIRCRAFT_ROLL, ControlsKeyboard.AIRCRAFT_ROLL_R, ControlsKeyboard.AIRCRAFT_ROLL_L, ConfigSystem.client.controlSettings.steeringControlRate.value, EntityVehicleF_Physics.MAX_RUDDER_ANGLE, aircraft.rudderInputVar, EntityVehicleF_Physics.RUDDER_DAMPEN_RATE);
-        } else {
-            controlControlSurface(aircraft, ControlsJoystick.AIRCRAFT_ROLL, ControlsKeyboard.AIRCRAFT_ROLL_R, ControlsKeyboard.AIRCRAFT_ROLL_L, ConfigSystem.client.controlSettings.flightControlRate.value, EntityVehicleF_Physics.MAX_AILERON_ANGLE, aircraft.aileronInputVar, EntityVehicleF_Physics.AILERON_DAMPEN_RATE);
+        if (!usingMouseYoke) {
+            if (aircraft.definition.motorized.isBlimp) {
+                controlControlSurface(aircraft, ControlsJoystick.AIRCRAFT_ROLL, ControlsKeyboard.AIRCRAFT_ROLL_R, ControlsKeyboard.AIRCRAFT_ROLL_L, ConfigSystem.client.controlSettings.steeringControlRate.value, EntityVehicleF_Physics.MAX_RUDDER_ANGLE, aircraft.rudderInputVar, EntityVehicleF_Physics.RUDDER_DAMPEN_RATE);
+            } else {
+                controlControlSurface(aircraft, ControlsJoystick.AIRCRAFT_ROLL, ControlsKeyboard.AIRCRAFT_ROLL_R, ControlsKeyboard.AIRCRAFT_ROLL_L, ConfigSystem.client.controlSettings.flightControlRate.value, EntityVehicleF_Physics.MAX_AILERON_ANGLE, aircraft.aileronInputVar, EntityVehicleF_Physics.AILERON_DAMPEN_RATE);
+            }
         }
         controlControlTrim(aircraft, ControlsJoystick.AIRCRAFT_TRIM_ROLL_R, ControlsJoystick.AIRCRAFT_TRIM_ROLL_L, EntityVehicleF_Physics.MAX_AILERON_TRIM, aircraft.aileronTrimVar);
 
@@ -421,6 +511,7 @@ public final class ControlSystem {
     private static void controlGroundVehicle(EntityVehicleF_Physics powered, boolean isPlayerController) {
         controlCamera(ControlsKeyboard.CAR_ZOOM_I, ControlsKeyboard.CAR_ZOOM_O, ControlsKeyboard.CAR_CHANGEVIEW, ControlsJoystick.CAR_LOOK_UD, ControlsJoystick.CAR_LOOK_LR);
         rotateCamera(ControlsJoystick.CAR_LOOK_R, ControlsJoystick.CAR_LOOK_L, ControlsJoystick.CAR_LOOK_U, ControlsJoystick.CAR_LOOK_D, ControlsJoystick.CAR_LOOK_A);
+        controlFreecam(ControlsKeyboard.CAR_CAMLOCK);
         controlGun(powered, ControlsKeyboard.CAR_GUN_FIRE, ControlsKeyboard.CAR_GUN_SWITCH);
         controlRadio(powered, ControlsKeyboard.CAR_RADIO);
         controlJoystick(powered, ControlsKeyboard.CAR_JS_INHIBIT);
@@ -699,6 +790,7 @@ public final class ControlSystem {
         AIRCRAFT_THROTTLE_D(ControlsJoystick.AIRCRAFT_THROTTLE, false, "K", LanguageSystem.INPUT_THROTTLE_D),
         AIRCRAFT_FLAPS_U(ControlsJoystick.AIRCRAFT_FLAPS_U, true, "Y", LanguageSystem.INPUT_FLAPS_U),
         AIRCRAFT_FLAPS_D(ControlsJoystick.AIRCRAFT_FLAPS_D, true, "H", LanguageSystem.INPUT_FLAPS_D),
+        AIRCRAFT_MOUSEYOKE(ControlsJoystick.AIRCRAFT_MOUSEYOKE, true, "C", LanguageSystem.INPUT_MOUSE_YOKE),
         AIRCRAFT_BRAKE(ControlsJoystick.AIRCRAFT_BRAKE, false, "B", LanguageSystem.INPUT_BRAKE),
         AIRCRAFT_PARK(ControlsJoystick.AIRCRAFT_PARK, true, "N", LanguageSystem.INPUT_PARK),
         AIRCRAFT_PANEL(ControlsJoystick.AIRCRAFT_PANEL, true, "U", LanguageSystem.INPUT_PANEL),
@@ -708,6 +800,7 @@ public final class ControlSystem {
         AIRCRAFT_ZOOM_I(ControlsJoystick.AIRCRAFT_ZOOM_I, true, "PRIOR", LanguageSystem.INPUT_ZOOM_I),
         AIRCRAFT_ZOOM_O(ControlsJoystick.AIRCRAFT_ZOOM_O, true, "NEXT", LanguageSystem.INPUT_ZOOM_O),
         AIRCRAFT_CHANGEVIEW(ControlsJoystick.AIRCRAFT_CHANGEVIEW, true, "X", LanguageSystem.INPUT_CHANGEVIEW),
+        AIRCRAFT_CAMLOCK(ControlsJoystick.AIRCRAFT_CAMLOCK, true, "LMENU", LanguageSystem.INPUT_CAMLOCK),
         AIRCRAFT_JS_INHIBIT(ControlsJoystick.AIRCRAFT_JS_INHIBIT, true, "SCROLL", LanguageSystem.INPUT_JS_INHIBIT),
 
         CAR_MOD(ControlsJoystick.CAR_MOD, false, "RSHIFT", LanguageSystem.INPUT_MOD),
@@ -727,6 +820,7 @@ public final class ControlSystem {
         CAR_ZOOM_O(ControlsJoystick.CAR_ZOOM_O, true, "NEXT", LanguageSystem.INPUT_ZOOM_O),
         CAR_CHANGEVIEW(ControlsJoystick.CAR_CHANGEVIEW, true, "X", LanguageSystem.INPUT_CHANGEVIEW),
         CAR_LIGHTS(ControlsJoystick.CAR_LIGHTS, true, "NUMPAD5", LanguageSystem.INPUT_LIGHTS),
+        CAR_CAMLOCK(ControlsJoystick.CAR_CAMLOCK, true, "LMENU", LanguageSystem.INPUT_CAMLOCK),
         CAR_TURNSIGNAL_L(ControlsJoystick.CAR_TURNSIGNAL_L, true, "NUMPAD4", LanguageSystem.INPUT_TURNSIGNAL_L),
         CAR_TURNSIGNAL_R(ControlsJoystick.CAR_TURNSIGNAL_R, true, "NUMPAD6", LanguageSystem.INPUT_TURNSIGNAL_R),
         CAR_JS_INHIBIT(ControlsJoystick.CAR_JS_INHIBIT, true, "SCROLL", LanguageSystem.INPUT_JS_INHIBIT);
@@ -802,6 +896,7 @@ public final class ControlSystem {
         AIRCRAFT_GEAR(false, true, LanguageSystem.INPUT_GEAR),
         AIRCRAFT_FLAPS_U(false, true, LanguageSystem.INPUT_FLAPS_U),
         AIRCRAFT_FLAPS_D(false, true, LanguageSystem.INPUT_FLAPS_D),
+        AIRCRAFT_MOUSEYOKE(false, true, LanguageSystem.INPUT_MOUSE_YOKE),
         AIRCRAFT_PANEL(false, true, LanguageSystem.INPUT_PANEL),
         AIRCRAFT_PARK(false, true, LanguageSystem.INPUT_PARK),
         AIRCRAFT_RADIO(false, true, LanguageSystem.INPUT_RADIO),
