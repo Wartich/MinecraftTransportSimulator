@@ -1425,7 +1425,11 @@ public class PartGun extends APart {
             if (targetPos != null) {
                 ticksToTarget = targetPos.distanceTo(position) / (muzzleVelocityVar.currentValue / 20D);
                 leadPoint.set(targetPos);
-                // Note: we don't have velocity for UUID targets, so no lead prediction
+                // Get velocity for UUID targets from radar stubs for lead prediction
+                Point3D targetMotion = getTargetMotionByUUID(targetUUID);
+                if (targetMotion != null) {
+                    leadPoint.addScaled(targetMotion, ticksToTarget);
+                }
             } else {
                 return null;
             }
