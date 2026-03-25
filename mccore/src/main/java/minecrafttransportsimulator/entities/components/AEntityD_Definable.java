@@ -617,6 +617,13 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
 
         gunsLockedOnCount = lockedOnCount;
 
+        //Mark all existing stubs as not updated this tick
+        for (AEntityB_Existing entity : missilesIncomingStubs) {
+            if (entity instanceof RemoteEntityStub) {
+                ((RemoteEntityStub) entity).lastUpdateTick = -1;
+            }
+        }
+
         //Update or create stub entities for each incoming missile
         //This prevents duplicates where one missile takes up multiple slots
         for (MissileLockData contact : missileContacts) {
@@ -640,6 +647,9 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 missilesIncomingStubs.add(stub);
             }
         }
+
+        //Remove stubs that weren't updated this tick (missiles no longer targeting us)
+        missilesIncomingStubs.removeIf(stub -> stub.lastUpdateTick == -1);
 
         //Sort by distance (required for missile logic)
         missilesIncomingStubs.sort((m1, m2) -> position.isFirstCloserThanSecond(m1.position, m2.position) ? -1 : 1);

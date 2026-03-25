@@ -173,6 +173,10 @@ public class EntityVehicleF_Physics extends AEntityVehicleE_Powered {
         verticalVector.set(0D, 1D, 0D).rotate(orientation);
         normalizedVelocityVector.set(motion).normalize();
         sideVector.set(verticalVector.crossProduct(headingVector));
+        
+        //Clean up invalid missiles from missilesIncoming list
+        missilesIncoming.removeIf(missile -> !missile.isValid);
+        
         world.endProfiling();
     }
 

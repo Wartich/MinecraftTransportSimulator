@@ -845,7 +845,6 @@ public class PartGun extends APart {
                     if (targetUUID != null) targetInfo = "UUID:" + targetUUID.toString().substring(0, 8);
                     if (engineTarget != null) targetInfo = "ENGINE:" + engineTarget.vehicleOn.definition.packID + ":" + engineTarget.vehicleOn.definition.systemName;
                     if (entityTarget != null) targetInfo = "ENTITY:" + entityTarget.getName();
-                    InterfaceManager.coreInterface.logError("[LOCKON] " + side + " Check | Gun:" + definition.packID + ":" + definition.systemName + " | isLongRange:" + definition.gun.isLongRange + " | canLock:" + canLockOn + " | Target:" + targetInfo);
                 }
                 //We are the type of bullet to get a target, figure out if we need one, or we don't do auto-targeting.
                 //If we do auto-target, we need to create a vector to look though.
