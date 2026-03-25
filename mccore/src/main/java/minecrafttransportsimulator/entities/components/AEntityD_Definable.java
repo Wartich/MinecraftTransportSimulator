@@ -629,8 +629,9 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 }
             }
             if (existingStub != null) {
-                //Update existing stub with new position and timestamp
+                //Update existing stub with new position, tracking data, and timestamp
                 existingStub.position.set(contact.position);
+                existingStub.trackingData = contact.targetDistance;
                 existingStub.lastUpdateTick = ticksExisted;
             } else {
                 //Create new stub
@@ -782,7 +783,7 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
         //Type of stub: RADAR_CONTACT (what we're detecting), RADAR_TRACKING (who's tracking us), MISSILE_INCOMING (what's coming at us)
         public final StubType type;
         //Tracking data: velocity for radar contacts, distance for missiles
-        public final double trackingData;
+        public double trackingData;
         //Motion vector for leading targets - used by isLongRange missiles
         public Point3D motion;
         //Timestamp of when this stub was last updated.
