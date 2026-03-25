@@ -387,11 +387,17 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                     } else if (externalEntityTargeted != null && (gun.definition.gun.targetType == TargetType.ALL || gun.definition.gun.targetType == TargetType.SOFT)) {
                         targetVector.set(targetPosition).addScaled(externalEntityTargeted.getVelocity(), (externalEntityTargeted.getVelocity().length() / 20D) * ticksToTarget).subtract(position).reOrigin(orientation).getAngles(true);
                     } else if (targetUUID != null && (gun.definition.gun.targetType == TargetType.ALL || gun.definition.gun.targetType == TargetType.AIRCRAFT || gun.definition.gun.targetType == TargetType.GROUND)) {
-                        // For UUID targets (isLongRange), get motion vector from gun's radar tracking
+                        // For UUID targets (isLongRange), get motion vector and speedFactor from gun's radar tracking
                         Point3D targetMotion = gun.getTargetMotionByUUID(targetUUID);
                         if (targetMotion != null) {
-                            // Use same formula as engineTargeted: motion scaled by (length / 20) * ticksToTarget
-                            targetVector.set(targetPosition).addScaled(targetMotion, (targetMotion.length() / 20D) * ticksToTarget).subtract(position).reOrigin(orientation).getAngles(true);
+                            // Get speedFactor - try loaded vehicle first, fallback to default
+                            double targetSpeedFactor = 0.35D;
+                            EntityVehicleF_Physics targetVehicle = gun.world.getEntity(targetUUID);
+                            if (targetVehicle != null) {
+                                targetSpeedFactor = targetVehicle.speedFactor;
+                            }
+                            // Use same formula as engineTargeted: motion scaled by (speedFactor / 20) * ticksToTarget
+                            targetVector.set(targetPosition).addScaled(targetMotion, (targetSpeedFactor / 20D) * ticksToTarget).subtract(position).reOrigin(orientation).getAngles(true);
                         } else {
                             // Fallback if motion not available
                             targetVector.set(targetPosition).subtract(position).reOrigin(orientation).getAngles(true);

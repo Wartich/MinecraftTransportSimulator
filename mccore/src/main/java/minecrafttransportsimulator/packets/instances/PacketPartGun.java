@@ -287,7 +287,6 @@ public class PacketPartGun extends APacketEntity<PartGun> {
                     gun.updateTargetRegistration();
                     if (ConfigSystem.settings.general.devMode.value) {
                         String targetInfo = lockedOnTargetUUID != null ? lockedOnTargetUUID.toString().substring(0, 8) : "NONE";
-                        InterfaceManager.coreInterface.logError("[LOCKON] SERVER RECEIVED | Gun:" + (gun.definition != null ? gun.definition.packID + ":" + gun.definition.systemName : "unknown") + " | Target:" + targetInfo);
                     }
                 }
                 break;
@@ -300,7 +299,6 @@ public class PacketPartGun extends APacketEntity<PartGun> {
                     if (targetVehicle != null) {
                         targetVehicle.reportedGunsLockedOn = lockedOnCount;
                         if (ConfigSystem.settings.general.devMode.value) {
-                            InterfaceManager.coreInterface.logError("[LOCKON] SERVER COUNT RECEIVED | Target:" + targetVehicleUUID.toString().substring(0, 8) + " | Count:" + lockedOnCount);
                         }
                     }
                 }

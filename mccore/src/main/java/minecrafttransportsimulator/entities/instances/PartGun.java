@@ -947,7 +947,6 @@ public class PartGun extends APart {
                     if (ConfigSystem.settings.general.devMode.value) {
                         String oldTarget = oldTargetUUID != null ? oldTargetUUID.toString().substring(0, 8) : "NONE";
                         String newTarget = targetUUID != null ? targetUUID.toString().substring(0, 8) : "NONE";
-                        InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->SERVER SYNC | Old:" + oldTarget + " -> New:" + newTarget);
                     }
                     InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, targetUUID));
                 }
@@ -966,14 +965,12 @@ public class PartGun extends APart {
 
                     for (java.util.Map.Entry<java.util.UUID, Integer> entry : lockonCounts.entrySet()) {
                         if (ConfigSystem.settings.general.devMode.value) {
-                            InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + entry.getKey().toString().substring(0, 8) + " | Count:" + entry.getValue());
                         }
                         InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, entry.getKey(), entry.getValue()));
                     }
 
                     if (oldTargetUUID != null && !java.util.Objects.equals(oldTargetUUID, targetUUID) && !lockonCounts.containsKey(oldTargetUUID)) {
                         if (ConfigSystem.settings.general.devMode.value) {
-                            InterfaceManager.coreInterface.logError("[LOCKON] CLIENT->TARGET SYNC | Target:" + oldTargetUUID.toString().substring(0, 8) + " | Count:0");
                         }
                         InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, oldTargetUUID, 0));
                     }
@@ -1428,7 +1425,14 @@ public class PartGun extends APart {
                 // Get velocity for UUID targets from radar stubs for lead prediction
                 Point3D targetMotion = getTargetMotionByUUID(targetUUID);
                 if (targetMotion != null) {
-                    leadPoint.addScaled(targetMotion, ticksToTarget);
+                    // Get speedFactor from the target vehicle
+                    double targetSpeedFactor = 0.35D; // Default
+                    EntityVehicleF_Physics targetVehicle = world.getEntity(targetUUID);
+                    if (targetVehicle != null) {
+                        targetSpeedFactor = targetVehicle.speedFactor;
+                    }
+                    // Use same formula as engineTarget: motion * speedFactor * ticksToTarget
+                    leadPoint.addScaled(targetMotion, targetSpeedFactor * ticksToTarget);
                 }
             } else {
                 return null;
