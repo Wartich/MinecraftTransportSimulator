@@ -435,7 +435,8 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
             if (((definition.bullet.isLongRange || !(gun.lastController instanceof IWrapperPlayer)) ^ world.isClient()) && (!world.isClient() || InterfaceManager.clientInterface.getClientPlayer().getID().equals(gun.lastController.getID()))) {
                 //Skip collision checks if chunks aren't loaded to prevent TPS spikes from async chunk loading.
                 //This can happen on server-side for long-range bullets that travel far from loaded chunks.
-                if (world.isClient() || (world.chunkLoaded(position) && world.chunkLoaded(position.copy().add(motion)))) {
+                //Can be overridden with unloadedCollisionCheck for artillery (at performance cost).
+                if (world.isClient() || definition.bullet.unloadedCollisionCheck || (world.chunkLoaded(position) && world.chunkLoaded(position.copy().add(motion)))) {
                     //Now that we have an accurate motion, check for collisions.
                 //First get a damage object to try to attack entities with.
                 double amount = definition.bullet.isHeat ? definition.bullet.damage : (velocity / initialVelocity) * definition.bullet.damage * ConfigSystem.settings.damage.bulletDamageFactor.value * ConfigSystem.settings.damage.packBulletDamageFactors.value.get(gun.lastLoadedBullet.definition.packID);
