@@ -6,7 +6,11 @@ import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
 import minecrafttransportsimulator.baseclasses.Point3D;
+import minecrafttransportsimulator.baseclasses.RotationMatrix;
+import minecrafttransportsimulator.blocks.components.ABlockBase.Axis;
 import minecrafttransportsimulator.entities.components.AEntityD_Definable;
+import minecrafttransportsimulator.entities.instances.EntityBullet;
+import minecrafttransportsimulator.items.instances.ItemBullet;
 import minecrafttransportsimulator.mcinterface.AWrapperWorld;
 
 /**
@@ -64,7 +68,20 @@ public class PacketRadarSync extends APacketBase {
         int missileCount = buf.readInt();
         this.missilesIncomingData = new ArrayList<>(missileCount);
         for (int i = 0; i < missileCount; i++) {
-            missilesIncomingData.add(new MissileLockData(readUUIDFromBuffer(buf), readPoint3dFromBuffer(buf), buf.readDouble()));
+            UUID uuid = readUUIDFromBuffer(buf);
+            Point3D position = readPoint3dFromBuffer(buf);
+            Point3D motion = readPoint3dFromBuffer(buf);
+            RotationMatrix orientation = new RotationMatrix();
+            orientation.angles.x = buf.readDouble();
+            orientation.angles.y = buf.readDouble();
+            orientation.angles.z = buf.readDouble();
+            orientation.updateToAngles();
+            double targetDistance = buf.readDouble();
+            ItemBullet bulletItem = readItemFromBuffer(buf);
+            long ticksExisted = buf.readLong();
+            EntityBullet.HitType lastHit = buf.readBoolean() ? EntityBullet.HitType.values()[buf.readByte()] : null;
+            Axis sideHit = buf.readBoolean() ? Axis.values()[buf.readByte()] : null;
+            missilesIncomingData.add(new MissileLockData(uuid, position, motion, orientation, targetDistance, bulletItem, ticksExisted, lastHit, sideHit));
         }
 
         //Read guns locked on count
@@ -103,7 +120,21 @@ public class PacketRadarSync extends APacketBase {
         for (MissileLockData missile : missilesIncomingData) {
             writeUUIDToBuffer(missile.uuid, buf);
             writePoint3dToBuffer(missile.position, buf);
+            writePoint3dToBuffer(missile.motion, buf);
+            buf.writeDouble(missile.orientation.angles.x);
+            buf.writeDouble(missile.orientation.angles.y);
+            buf.writeDouble(missile.orientation.angles.z);
             buf.writeDouble(missile.targetDistance);
+            writeItemToBuffer(missile.bulletItem, buf);
+            buf.writeLong(missile.ticksExisted);
+            buf.writeBoolean(missile.lastHit != null);
+            if (missile.lastHit != null) {
+                buf.writeByte(missile.lastHit.ordinal());
+            }
+            buf.writeBoolean(missile.sideHit != null);
+            if (missile.sideHit != null) {
+                buf.writeByte(missile.sideHit.ordinal());
+            }
         }
 
         //Write guns locked on count
@@ -153,12 +184,24 @@ public class PacketRadarSync extends APacketBase {
     public static class MissileLockData {
         public final UUID uuid;
         public final Point3D position;
+        public final Point3D motion;
+        public final RotationMatrix orientation;
         public final double targetDistance;
+        public final ItemBullet bulletItem;
+        public final long ticksExisted;
+        public final EntityBullet.HitType lastHit;
+        public final Axis sideHit;
 
-        public MissileLockData(UUID uuid, Point3D position, double targetDistance) {
+        public MissileLockData(UUID uuid, Point3D position, Point3D motion, RotationMatrix orientation, double targetDistance, ItemBullet bulletItem, long ticksExisted, EntityBullet.HitType lastHit, Axis sideHit) {
             this.uuid = uuid;
             this.position = position;
+            this.motion = motion;
+            this.orientation = orientation;
             this.targetDistance = targetDistance;
+            this.bulletItem = bulletItem;
+            this.ticksExisted = ticksExisted;
+            this.lastHit = lastHit;
+            this.sideHit = sideHit;
         }
     }
 }
