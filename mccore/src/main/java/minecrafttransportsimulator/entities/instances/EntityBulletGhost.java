@@ -22,16 +22,59 @@ public class EntityBulletGhost extends AEntityD_Definable<JSONBullet> {
     public EntityBullet.HitType lastHit;
     public Axis sideHit;
     
+    //For smooth interpolation between sync updates
+    private final Point3D lastSyncPosition = new Point3D();
+    private final Point3D lastSyncMotion = new Point3D();
+    private long lastSyncTick = 0;
+    
     public EntityBulletGhost(AWrapperWorld world, Point3D position, Point3D motion, RotationMatrix orientation, ItemBullet bulletItem) {
         super(world, position, motion, new Point3D(), bulletItem);
         this.orientation.set(orientation);
+        this.lastSyncPosition.set(position);
+        this.lastSyncMotion.set(motion);
+        this.lastSyncTick = ticksExisted;
     }
 
     @Override
     public void update() {
         super.update();
-        //Ghost bullets don't do physics or collision - position is updated externally
-        //Just update particles and sounds via the parent class
+        
+        //Ghost bullets don't do physics or collision - but they DO interpolate position
+        //between sync updates for smooth movement
+        if (world.isClient()) {
+            //If bullet has hit something, stop interpolating and stay at hit position
+            if (lastHit != null) {
+                //Bullet has impacted, don't move anymore
+                return;
+            }
+            
+            //Calculate ticks since last sync
+            long ticksSinceSync = ticksExisted - lastSyncTick;
+            
+            //If we haven't received a sync in a while (>60 ticks = 3 seconds), remove ghost
+            if (ticksSinceSync > 60) {
+                remove();
+                return;
+            }
+            
+            //Interpolate position based on last synced motion
+            //This makes bullets move smoothly between 1-second sync updates
+            if (ticksSinceSync > 0 && ticksSinceSync < 20) {
+                position.set(lastSyncPosition).add(lastSyncMotion.copy().scale(ticksSinceSync));
+            }
+        }
+    }
+    
+    /**
+     * Called when position is synced from server.
+     * Updates the interpolation base values.
+     */
+    public void onPositionSync(Point3D newPosition, Point3D newMotion) {
+        this.lastSyncPosition.set(newPosition);
+        this.lastSyncMotion.set(newMotion);
+        this.lastSyncTick = ticksExisted;
+        this.position.set(newPosition);
+        this.motion.set(newMotion);
     }
 
     @Override

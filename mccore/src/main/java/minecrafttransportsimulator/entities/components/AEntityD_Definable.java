@@ -25,7 +25,6 @@ import minecrafttransportsimulator.baseclasses.TransformationMatrix;
 import minecrafttransportsimulator.blocks.components.ABlockBase.BlockMaterial;
 import minecrafttransportsimulator.entities.instances.APart;
 import minecrafttransportsimulator.entities.instances.EntityBullet;
-import minecrafttransportsimulator.entities.instances.EntityBulletGhost;
 import minecrafttransportsimulator.entities.instances.EntityParticle;
 import minecrafttransportsimulator.entities.instances.EntityVehicleF_Physics;
 import minecrafttransportsimulator.entities.instances.PartSeat;
@@ -186,10 +185,6 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
     //Stubs for missiles with full rendering data (position, motion, orientation, bulletItem)
     //Used for rendering fake bullets on client side for isLongRange missiles beyond render distance.
     public final Map<UUID, RemoteEntityStub> missileRenderStubs = new HashMap<>();
-    
-    //Ghost bullet entities for rendering isLongRange missiles beyond render distance
-    //Maps missile UUID to ghost entity
-    private final Map<UUID, EntityBulletGhost> ghostBullets = new HashMap<>();
 
     private final Comparator<AEntityB_Existing> entityComparator = new Comparator<AEntityB_Existing>() {
         @Override
@@ -405,10 +400,10 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
 
         //Update radar on the server every tick.
         //Server does the detection to support vehicles outside client render distance.
-        //Results are synced to clients via packets every 20 ticks (1 second).
+        //Results are synced to clients via packets.
         if (definition.general.radarRange > 0) {
             if (!world.isClient()) {
-                //Server-side: detect vehicles every tick for accurate tracking
+                //Server-side: detect vehicles and sync to clients
                 Collection<EntityVehicleF_Physics> allVehicles = world.getEntitiesOfType(EntityVehicleF_Physics.class);
                 aircraftOnRadar.clear();
                 groundersOnRadar.clear();
@@ -441,8 +436,7 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 aircraftOnRadar.sort(entityComparator);
                 groundersOnRadar.sort(entityComparator);
 
-                //Sync radar data to all clients every 20 ticks (1 second) to reduce bandwidth
-                if (ticksExisted % 20 == 0) {
+                //Sync radar data to all clients
                 List<RadarContactData> aircraftData = new ArrayList<>();
                 List<RadarContactData> grounderData = new ArrayList<>();
                 List<UUID> trackedVehicleUUIDs = new ArrayList<>();
@@ -461,35 +455,29 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                     }
                 }
 
-                //Get ALL isLongRange bullet data for ghost rendering on clients
-                //This allows artillery shells, missiles targeting ground, etc. to be visible to all clients
+                //Get missile data if this is a vehicle
                 List<MissileLockData> missileData = new ArrayList<>();
-                for (EntityBullet bullet : world.getEntitiesOfType(EntityBullet.class)) {
-                    if (bullet.definition.bullet.isLongRange) {
-                        //Convert orientation angles before sending
-                        bullet.orientation.convertToAngles();
-                        missileData.add(new MissileLockData(
-                            bullet.uniqueUUID, 
-                            bullet.position.copy(), 
-                            bullet.motion.copy(),
-                            new RotationMatrix().set(bullet.orientation),
-                            bullet.targetDistance,
-                            bullet.gun.lastLoadedBullet,
-                            bullet.ticksExisted,
-                            bullet.lastHit,
-                            bullet.sideHit));
-                    }
-                }
-                
-                //Get locked-on count if this is a vehicle
                 int lockedOnCount = 0;
                 if (this instanceof EntityVehicleF_Physics) {
                     EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) this;
+                    for (EntityBullet missile : vehicle.missilesIncoming) {
+                        //Convert orientation angles before sending
+                        missile.orientation.convertToAngles();
+                        missileData.add(new MissileLockData(
+                            missile.uniqueUUID, 
+                            missile.position.copy(), 
+                            missile.motion.copy(),
+                            new RotationMatrix().set(missile.orientation),
+                            missile.targetDistance,
+                            missile.gun.lastLoadedBullet,
+                            missile.ticksExisted,
+                            missile.lastHit,
+                            missile.sideHit));
+                    }
                     lockedOnCount = vehicle.gunsLockedOn.size();
                 }
 
                 InterfaceManager.packetInterface.sendToAllClients(new PacketRadarSync(uniqueUUID, getRadarTargetPosition(), aircraftData, grounderData, trackedVehicleUUIDs, missileData, lockedOnCount));
-                }
             }
             //On client, radar lists are populated by PacketRadarSync from server
 
@@ -1020,57 +1008,12 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
     }
 
     /**
-     * Renders fake bullets for isLongRange missiles that are tracked via radar.
-     * Creates ghost bullet entities that render the full bullet model, particles, and sounds
-     * using position/motion/orientation data synced through the radar system.
+     * Updates missile tracking data for missile_* variables.
+     * Ghost bullets are now created via bullet self-sync, not here.
      */
     public void renderFakeBullets(float partialTicks) {
-        //Only render on client
-        if (!world.isClient()) {
-            return;
-        }
-
-        //Remove ghost bullets for missiles that no longer exist
-        ghostBullets.entrySet().removeIf(entry -> {
-            if (!missileRenderStubs.containsKey(entry.getKey())) {
-                entry.getValue().remove();
-                return true;
-            }
-            return false;
-        });
-
-        //Create or update ghost bullets for each missile stub
-        for (RemoteEntityStub stub : missileRenderStubs.values()) {
-            //Get the missile data from stub
-            if (stub.missileData == null || stub.missileData.bulletItem == null) {
-                continue;
-            }
-
-            MissileLockData missileData = stub.missileData;
-            EntityBulletGhost ghost = ghostBullets.get(stub.entityUUID);
-            
-            if (ghost == null) {
-                //Create new ghost bullet entity
-                ghost = new EntityBulletGhost(world, stub.position.copy(), stub.motion.copy(), stub.orientation, missileData.bulletItem);
-                //Set initial tick count to match real bullet
-                ghost.ticksExisted = missileData.ticksExisted;
-                //Set hit state
-                ghost.lastHit = missileData.lastHit;
-                ghost.sideHit = missileData.sideHit;
-                world.addEntity(ghost);
-                ghostBullets.put(stub.entityUUID, ghost);
-            } else {
-                //Update existing ghost bullet position, orientation, and state
-                ghost.position.set(stub.position);
-                ghost.motion.set(stub.motion);
-                ghost.orientation.set(stub.orientation);
-                //Sync tick count (don't let it drift)
-                ghost.ticksExisted = missileData.ticksExisted;
-                //Update hit state
-                ghost.lastHit = missileData.lastHit;
-                ghost.sideHit = missileData.sideHit;
-            }
-        }
+        //No-op: Ghost bullets are now created via bullet self-sync in PacketRadarSync
+        //This method is kept for compatibility but does nothing
     }
 
     /**

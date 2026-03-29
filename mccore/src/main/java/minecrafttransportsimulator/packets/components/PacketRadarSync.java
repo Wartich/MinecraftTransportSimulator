@@ -1,7 +1,9 @@
 package minecrafttransportsimulator.packets.components;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
@@ -10,6 +12,7 @@ import minecrafttransportsimulator.baseclasses.RotationMatrix;
 import minecrafttransportsimulator.blocks.components.ABlockBase.Axis;
 import minecrafttransportsimulator.entities.components.AEntityD_Definable;
 import minecrafttransportsimulator.entities.instances.EntityBullet;
+import minecrafttransportsimulator.entities.instances.EntityBulletGhost;
 import minecrafttransportsimulator.items.instances.ItemBullet;
 import minecrafttransportsimulator.mcinterface.AWrapperWorld;
 
@@ -21,6 +24,9 @@ import minecrafttransportsimulator.mcinterface.AWrapperWorld;
  * @author don_bruce
  */
 public class PacketRadarSync extends APacketBase {
+    //Static map to track ghost bullets by real bullet UUID
+    private static final Map<UUID, EntityBulletGhost> ghostBulletMap = new HashMap<>();
+    
     private final UUID radarEntityUUID;
     private final Point3D radarPosition;
     private final List<RadarContactData> aircraftContacts;
@@ -148,6 +154,40 @@ public class PacketRadarSync extends APacketBase {
         if (entity != null) {
             entity.setRadarContacts(aircraftContacts, grounderContacts);
             entity.setMissileContacts(missilesIncomingData, gunsLockedOnCount);
+        } else if (!missilesIncomingData.isEmpty() && world.isClient()) {
+            //No entity found, but we have missile data
+            //This happens when bullets self-sync (artillery, etc.)
+            //Create/update ghost bullets directly in the world
+            //Only do this on client side
+            for (MissileLockData missileData : missilesIncomingData) {
+                //Check if we already have a ghost for this bullet UUID
+                EntityBulletGhost ghost = ghostBulletMap.get(missileData.uuid);
+                
+                if (ghost != null && ghost.isValid) {
+                    //Update existing ghost
+                    ghost.onPositionSync(missileData.position, missileData.motion);
+                    ghost.orientation.set(missileData.orientation);
+                    ghost.ticksExisted = missileData.ticksExisted;
+                    ghost.lastHit = missileData.lastHit;
+                    ghost.sideHit = missileData.sideHit;
+                } else {
+                    //Check if real bullet exists on client (within render distance)
+                    AEntityD_Definable<?> existingEntity = world.getEntity(missileData.uuid);
+                    if (existingEntity == null) {
+                        //No real bullet found - create ghost
+                        ghost = new EntityBulletGhost(world, missileData.position.copy(), missileData.motion.copy(), missileData.orientation, missileData.bulletItem);
+                        ghost.ticksExisted = missileData.ticksExisted;
+                        ghost.lastHit = missileData.lastHit;
+                        ghost.sideHit = missileData.sideHit;
+                        world.addEntity(ghost);
+                        ghostBulletMap.put(missileData.uuid, ghost);
+                    }
+                    //If real bullet exists, don't create ghost
+                }
+            }
+            
+            //Clean up invalid ghosts from map
+            ghostBulletMap.entrySet().removeIf(entry -> !entry.getValue().isValid);
         }
 
         //Update tracking info for each tracked vehicle

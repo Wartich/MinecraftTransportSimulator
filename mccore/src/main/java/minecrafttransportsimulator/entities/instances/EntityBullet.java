@@ -27,6 +27,7 @@ import minecrafttransportsimulator.mcinterface.AWrapperWorld;
 import minecrafttransportsimulator.mcinterface.IWrapperEntity;
 import minecrafttransportsimulator.mcinterface.IWrapperPlayer;
 import minecrafttransportsimulator.mcinterface.InterfaceManager;
+import minecrafttransportsimulator.packets.components.PacketRadarSync;
 import minecrafttransportsimulator.packets.instances.PacketEntityBulletHitBlock;
 import minecrafttransportsimulator.packets.instances.PacketEntityBulletHitExternalEntity;
 import minecrafttransportsimulator.packets.instances.PacketEntityBulletHitGeneric;
@@ -212,6 +213,45 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
             return;
         }
 
+        //Self-sync for isLongRange bullets on server
+        //This allows bullets to be visible to all clients in range, not just those with radar
+        //All isLongRange bullets self-sync for consistency and simplicity
+        if (!world.isClient() && definition.bullet.isLongRange) {
+            //Determine sync rate based on distance to target
+            //Within 512 blocks of target: sync every tick for smooth visuals
+            //Beyond 512 blocks: sync every 20 ticks to save bandwidth
+            boolean closeToTarget = false;
+            if (targetPosition != null) {
+                double distanceToTarget = position.distanceTo(targetPosition);
+                closeToTarget = distanceToTarget < 512;
+            }
+            
+            boolean shouldSync = closeToTarget || (ticksExisted % 20 == 0);
+            
+            if (shouldSync) {
+                //Self-sync to all clients so they can see it
+                List<PacketRadarSync.MissileLockData> bulletData = new ArrayList<>();
+                orientation.convertToAngles();
+                bulletData.add(new PacketRadarSync.MissileLockData(
+                    uniqueUUID,
+                    position.copy(),
+                    motion.copy(),
+                    new RotationMatrix().set(orientation),
+                    targetDistance,
+                    gun.lastLoadedBullet,
+                    ticksExisted,
+                    lastHit,
+                    sideHit
+                ));
+                
+                //Send to all clients within 1024 blocks
+                //Use a dummy UUID for the "radar entity" since this is bullet-initiated
+                InterfaceManager.packetInterface.sendToAllClients(
+                    new PacketRadarSync(uniqueUUID, position, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), bulletData, 0)
+                );
+            }
+        }
+
         //If we are waiting on an action packet from the server, don't do any updates and just hold for packet or expire timer.
         if (!waitingOnActionPacket) {
             //Update distance traveled.
@@ -345,30 +385,43 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                             }
                         } else if (targetUUID != null) {
                             // Tracking by UUID - can track beyond render distance
-                            // For isLongRange bullets, always use gun's target position (uses radar target position)
-                            // For non-isLongRange bullets, try loaded entity first, then fall back to gun's method
+                            // Need to check seeker parameters for ACTIVE guidance
+                            normalizedConeVector.set(searchVector).normalize();
+                            
+                            // Get target position
+                            Point3D targetPos = null;
                             EntityVehicleF_Physics loadedVehicle = world.getEntity(targetUUID);
                             if (loadedVehicle != null && !loadedVehicle.outOfHealth) {
                                 // For isLongRange bullets, use radar target position
                                 // For non-isLongRange bullets, use actual position
-                                Point3D targetPos = definition.bullet.isLongRange ? loadedVehicle.getRadarTargetPosition() : loadedVehicle.position;
-                                if (targetPos != null && targetPosition != null) {
-                                    targetPosition.set(targetPos);
-                                } else {
-                                    // Lost target
-                                    targetUUID = null;
-                                    targetPosition = null;
-                                }
+                                targetPos = definition.bullet.isLongRange ? loadedVehicle.getRadarTargetPosition() : loadedVehicle.position;
                             } else {
                                 // Use gun's tracking (radar stubs on client)
-                                // For isLongRange bullets, this returns radar target position
-                                Point3D newPos = gun.getTargetPositionByUUID(targetUUID);
-                                if (newPos != null && targetPosition != null) {
-                                    targetPosition.set(newPos);
-                                } else {
-                                    // Lost target
+                                targetPos = gun.getTargetPositionByUUID(targetUUID);
+                            }
+                            
+                            if (targetPos == null) {
+                                // Lost target
+                                targetUUID = null;
+                                targetPosition = null;
+                            } else {
+                                // Check seeker parameters - can we still see the target?
+                                normalizedEntityVector.set(targetPos).subtract(startPoint).normalize();
+                                double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
+                                double distanceToTarget = targetPos.distanceTo(position);
+                                
+                                // Check if target is within seeker cone, range, and line of sight
+                                if (targetAngle > coneAngle || distanceToTarget > definition.bullet.seekerRange || world.getBlockHit(startPoint, targetPos) != null) {
+                                    // Lost lock - target outside seeker parameters
+                                    EntityVehicleF_Physics targetVehicle = world.getEntity(targetUUID);
+                                    if (targetVehicle != null) {
+                                        targetVehicle.missilesIncoming.remove(this);
+                                    }
                                     targetUUID = null;
                                     targetPosition = null;
+                                } else {
+                                    // Still locked, update position
+                                    targetPosition.set(targetPos);
                                 }
                             }
                         }
@@ -823,6 +876,31 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
             bullet.lastHit = hitType;
             bullet.sideHit = hitSide;
             bullet.impactDespawnTimer = bullet.definition.bullet.impactDespawnTime;
+
+            //If this is an isLongRange bullet without a target, send immediate sync for hit state
+            //This ensures hit animations show instantly instead of waiting up to 1 second
+            if (!bullet.world.isClient() && bullet.definition.bullet.isLongRange) {
+                boolean hasTarget = (bullet.targetUUID != null || bullet.engineTargeted != null || bullet.externalEntityTargeted != null);
+                if (!hasTarget) {
+                    //Send immediate sync with hit data
+                    List<PacketRadarSync.MissileLockData> bulletData = new ArrayList<>();
+                    bullet.orientation.convertToAngles();
+                    bulletData.add(new PacketRadarSync.MissileLockData(
+                        bullet.uniqueUUID,
+                        bullet.position.copy(),
+                        bullet.motion.copy(),
+                        new RotationMatrix().set(bullet.orientation),
+                        bullet.targetDistance,
+                        gun.lastLoadedBullet,
+                        bullet.ticksExisted,
+                        bullet.lastHit,
+                        bullet.sideHit
+                    ));
+                    InterfaceManager.packetInterface.sendToAllClients(
+                        new PacketRadarSync(bullet.uniqueUUID, bullet.position, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), bulletData, 0)
+                    );
+                }
+            }
 
             //If we are on the client, do one last particle check.
             //This lets systems query the blocks we hit before the server adjusts them the next tick.
