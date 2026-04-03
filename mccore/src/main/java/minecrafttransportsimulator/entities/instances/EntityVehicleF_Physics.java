@@ -722,7 +722,8 @@ public class EntityVehicleF_Physics extends AEntityVehicleE_Powered {
             case ("heading"):
                 return new ComputedVariable(this, variable, partialTicks -> {
                     double heading = -orientation.angles.y;
-                    if (ConfigSystem.client.controlSettings.north360.value)
+                    // Only access client config on client side
+                    if (world.isClient() && ConfigSystem.client != null && ConfigSystem.client.controlSettings.north360.value)
                         heading += 180;
                     while (heading < 0)
                         heading += 360;
