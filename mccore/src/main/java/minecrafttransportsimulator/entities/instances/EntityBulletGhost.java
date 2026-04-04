@@ -27,6 +27,9 @@ public class EntityBulletGhost extends AEntityD_Definable<JSONBullet> {
     private final Point3D lastSyncMotion = new Point3D();
     private long lastSyncTick = 0;
     
+    //Despawn timer after impact
+    private int impactDespawnTimer = -1;
+    
     public EntityBulletGhost(AWrapperWorld world, Point3D position, Point3D motion, RotationMatrix orientation, ItemBullet bulletItem) {
         super(world, position, motion, new Point3D(), bulletItem);
         this.orientation.set(orientation);
@@ -42,9 +45,16 @@ public class EntityBulletGhost extends AEntityD_Definable<JSONBullet> {
         //Ghost bullets don't do physics or collision - but they DO interpolate position
         //between sync updates for smooth movement
         if (world.isClient()) {
-            //If bullet has hit something, stop interpolating and stay at hit position
+            //If bullet has hit something, start despawn timer
             if (lastHit != null) {
-                //Bullet has impacted, don't move anymore
+                //Start despawn timer if not already started
+                if (impactDespawnTimer < 0) {
+                    impactDespawnTimer = definition.bullet.impactDespawnTime;
+                }
+                //Count down and remove when timer expires
+                if (impactDespawnTimer-- == 0) {
+                    remove();
+                }
                 return;
             }
             

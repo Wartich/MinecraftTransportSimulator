@@ -877,29 +877,26 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
             bullet.sideHit = hitSide;
             bullet.impactDespawnTimer = bullet.definition.bullet.impactDespawnTime;
 
-            //If this is an isLongRange bullet without a target, send immediate sync for hit state
-            //This ensures hit animations show instantly instead of waiting up to 1 second
+            //If this is an isLongRange bullet, send immediate sync for hit state
+            //This ensures ghost bullets on clients show hit animations instantly
             if (!bullet.world.isClient() && bullet.definition.bullet.isLongRange) {
-                boolean hasTarget = (bullet.targetUUID != null || bullet.engineTargeted != null || bullet.externalEntityTargeted != null);
-                if (!hasTarget) {
-                    //Send immediate sync with hit data
-                    List<PacketRadarSync.MissileLockData> bulletData = new ArrayList<>();
-                    bullet.orientation.convertToAngles();
-                    bulletData.add(new PacketRadarSync.MissileLockData(
-                        bullet.uniqueUUID,
-                        bullet.position.copy(),
-                        bullet.motion.copy(),
-                        new RotationMatrix().set(bullet.orientation),
-                        bullet.targetDistance,
-                        gun.lastLoadedBullet,
-                        bullet.ticksExisted,
-                        bullet.lastHit,
-                        bullet.sideHit
-                    ));
-                    InterfaceManager.packetInterface.sendToAllClients(
-                        new PacketRadarSync(bullet.uniqueUUID, bullet.position, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), bulletData, 0)
-                    );
-                }
+                //Send immediate sync with hit data
+                List<PacketRadarSync.MissileLockData> bulletData = new ArrayList<>();
+                bullet.orientation.convertToAngles();
+                bulletData.add(new PacketRadarSync.MissileLockData(
+                    bullet.uniqueUUID,
+                    bullet.position.copy(),
+                    bullet.motion.copy(),
+                    new RotationMatrix().set(bullet.orientation),
+                    bullet.targetDistance,
+                    gun.lastLoadedBullet,
+                    bullet.ticksExisted,
+                    bullet.lastHit,
+                    bullet.sideHit
+                ));
+                InterfaceManager.packetInterface.sendToAllClients(
+                    new PacketRadarSync(bullet.uniqueUUID, bullet.position, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), bulletData, 0)
+                );
             }
 
             //If we are on the client, do one last particle check.

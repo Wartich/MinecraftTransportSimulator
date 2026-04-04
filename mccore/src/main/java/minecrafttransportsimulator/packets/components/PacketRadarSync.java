@@ -15,6 +15,8 @@ import minecrafttransportsimulator.entities.instances.EntityBullet;
 import minecrafttransportsimulator.entities.instances.EntityBulletGhost;
 import minecrafttransportsimulator.items.instances.ItemBullet;
 import minecrafttransportsimulator.mcinterface.AWrapperWorld;
+import minecrafttransportsimulator.mcinterface.IWrapperPlayer;
+import minecrafttransportsimulator.mcinterface.InterfaceManager;
 
 /**
  * Packet used to sync radar contact data from server to client.
@@ -171,10 +173,16 @@ public class PacketRadarSync extends APacketBase {
                     ghost.lastHit = missileData.lastHit;
                     ghost.sideHit = missileData.sideHit;
                 } else {
-                    //Check if real bullet exists on client (within render distance)
-                    AEntityD_Definable<?> existingEntity = world.getEntity(missileData.uuid);
-                    if (existingEntity == null) {
-                        //No real bullet found - create ghost
+                    //Check if bullet is within client render distance
+                    //If it is, the client will receive PacketPartGun.LONG_RANGE_BULLET_SPAWN and create the real bullet
+                    //So we shouldn't create a ghost
+                    IWrapperPlayer clientPlayer = InterfaceManager.clientInterface.getClientPlayer();
+                    double distanceToClient = clientPlayer.getPosition().distanceTo(missileData.position);
+                    //Use 128 blocks as render distance threshold (typical entity render distance)
+                    boolean withinRenderDistance = distanceToClient < 128;
+                    
+                    if (!withinRenderDistance) {
+                        //Beyond render distance - create ghost for rendering
                         ghost = new EntityBulletGhost(world, missileData.position.copy(), missileData.motion.copy(), missileData.orientation, missileData.bulletItem);
                         ghost.ticksExisted = missileData.ticksExisted;
                         ghost.lastHit = missileData.lastHit;
@@ -182,7 +190,7 @@ public class PacketRadarSync extends APacketBase {
                         world.addEntity(ghost);
                         ghostBulletMap.put(missileData.uuid, ghost);
                     }
-                    //If real bullet exists, don't create ghost
+                    //If within render distance, don't create ghost - real bullet will spawn via PacketPartGun
                 }
             }
             
