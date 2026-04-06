@@ -407,8 +407,12 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 Collection<EntityVehicleF_Physics> allVehicles = world.getEntitiesOfType(EntityVehicleF_Physics.class);
                 aircraftOnRadar.clear();
                 groundersOnRadar.clear();
-                Point3D searchVector = new Point3D();
+                
+                //Calculate radar's forward direction once per tick, not per vehicle
+                Point3D searchVector = new Point3D(0, 0, definition.general.radarRange).rotate(orientation).normalize();
                 Point3D LOSVector = new Point3D();
+                double coneAngle = definition.general.radarWidth;
+                
                 for (EntityVehicleF_Physics vehicle : allVehicles) {
                     //Check if vehicle is visible to radar
                     if (!vehicle.isRadarVisible()) {
@@ -418,10 +422,8 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                     //Get the vehicle's radar target position for detection
                     Point3D vehicleRadarPos = vehicle.getRadarTargetPosition();
 
-                    searchVector.set(0, 0, definition.general.radarRange).rotate(orientation);
                     LOSVector.set(vehicleRadarPos).subtract(position).normalize();
-                    double coneAngle = definition.general.radarWidth;
-                    double angle = Math.abs(Math.toDegrees(Math.acos(searchVector.normalize().dotProduct(LOSVector, false))));
+                    double angle = Math.abs(Math.toDegrees(Math.acos(searchVector.dotProduct(LOSVector, false))));
                     if (!vehicle.outOfHealth && vehicle != this && (angle < coneAngle && vehicleRadarPos.isDistanceToCloserThan(position, definition.general.radarRange))) {
                         if (vehicle.definition.motorized.isAircraft) {
                             aircraftOnRadar.add(vehicle);
@@ -437,22 +439,19 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
                 groundersOnRadar.sort(entityComparator);
 
                 //Sync radar data to all clients
+                //On server, these lists only contain EntityVehicleF_Physics (no stubs), so no instanceof check needed
                 List<RadarContactData> aircraftData = new ArrayList<>();
                 List<RadarContactData> grounderData = new ArrayList<>();
                 List<UUID> trackedVehicleUUIDs = new ArrayList<>();
                 for (AEntityB_Existing contact : aircraftOnRadar) {
-                    if (contact instanceof EntityVehicleF_Physics) {
-                        EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
-                        aircraftData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
-                        trackedVehicleUUIDs.add(vehicle.uniqueUUID);
-                    }
+                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
+                    aircraftData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
+                    trackedVehicleUUIDs.add(vehicle.uniqueUUID);
                 }
                 for (AEntityB_Existing contact : groundersOnRadar) {
-                    if (contact instanceof EntityVehicleF_Physics) {
-                        EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
-                        grounderData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
-                        trackedVehicleUUIDs.add(vehicle.uniqueUUID);
-                    }
+                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
+                    grounderData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
+                    trackedVehicleUUIDs.add(vehicle.uniqueUUID);
                 }
 
                 //Get missile data if this is a vehicle

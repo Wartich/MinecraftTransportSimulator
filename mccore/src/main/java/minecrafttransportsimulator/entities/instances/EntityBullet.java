@@ -413,9 +413,17 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                                 // Check if target is within seeker cone, range, and line of sight
                                 if (targetAngle > coneAngle || distanceToTarget > definition.bullet.seekerRange || world.getBlockHit(startPoint, targetPos) != null) {
                                     // Lost lock - target outside seeker parameters
-                                    EntityVehicleF_Physics targetVehicle = world.getEntity(targetUUID);
-                                    if (targetVehicle != null) {
-                                        targetVehicle.missilesIncoming.remove(this);
+                                    // Use cached loadedVehicle to avoid redundant entity lookup
+                                    if (loadedVehicle != null) {
+                                        loadedVehicle.missilesIncoming.remove(this);
+                                    }
+                                    // Also try to get and clean up from server-side list if on server
+                                    // This ensures cleanup even when vehicle is beyond client render distance
+                                    if (!world.isClient()) {
+                                        EntityVehicleF_Physics serverVehicle = world.getEntity(targetUUID);
+                                        if (serverVehicle != null) {
+                                            serverVehicle.missilesIncoming.remove(this);
+                                        }
                                     }
                                     targetUUID = null;
                                     targetPosition = null;

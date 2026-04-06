@@ -834,10 +834,9 @@ public class PartGun extends APart {
             //Check for a target for this gun if we have a lock-on missile.
             //Only do this once every second to reduce CPU usage.
             //First, check if the loaded bullet is guided
-            //For isLongRange guns, only run lockon on client (uses radar stubs), server gets target from client via packet
+            //Run lockon only on client for all guns (server gets target from client via packet or bullet spawning)
             boolean canLockOn = canLockTargetsVar.isActive || (lastLoadedBullet != null && lastLoadedBullet.definition.bullet.turnRate > 0);
-            boolean isLongRangeGunOnServer = definition.gun.isLongRange && !world.isClient();
-            if (canLockOn && !isLongRangeGunOnServer && ticksExisted % 20 == 0) {
+            if (canLockOn && world.isClient() && ticksExisted % 20 == 0) {
                 //Debug logging for lockon checks
                 if (ConfigSystem.settings.general.devMode.value) {
                     String side = world.isClient() ? "CLIENT" : "SERVER";
@@ -921,13 +920,16 @@ public class PartGun extends APart {
                         for (IWrapperEntity entity : world.getEntitiesWithin(searchBox)) {
                             if (entity.isValid() && entity != controller) {
                                 targetVector.set(entity.getPosition()).subtract(startPoint);
-                                if (world.getBlockHit(startPoint, targetVector) == null) {
-                                    double entityDistance = entity.getPosition().distanceTo(startPoint);
-                                    if (entityDistance < smallestDistance) {
-                                        //Potential match by distance, check if the entity is inside the cone.
-                                        normalizedEntityVector.set(entity.getPosition()).subtract(startPoint).normalize();
-                                        double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
-                                        if (targetAngle < coneAngle) {
+                                double entityDistance = entity.getPosition().distanceTo(startPoint);
+                                
+                                // Check distance and angle first (cheap checks)
+                                if (entityDistance < smallestDistance) {
+                                    //Potential match by distance, check if the entity is inside the cone.
+                                    normalizedEntityVector.set(entity.getPosition()).subtract(startPoint).normalize();
+                                    double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
+                                    if (targetAngle < coneAngle) {
+                                        // Passed cheap checks, now do expensive LOS check
+                                        if (world.getBlockHit(startPoint, targetVector) == null) {
                                             smallestDistance = entityDistance;
                                             entityTarget = entity;
                                         }
@@ -1683,13 +1685,16 @@ public class PartGun extends APart {
                 Point3D targetPos = getVehicleTargetPosition(vehicle);
 
                 targetVector.set(targetPos).subtract(startPoint);
-                if (world.getBlockHit(startPoint, targetVector) == null) {
-                    double entityDistance = targetPos.distanceTo(startPoint);
-                    if (entityDistance < smallestDistance) {
-                        // Potential match by distance, check if the entity is inside the cone
-                        normalizedEntityVector.set(targetPos).subtract(startPoint).normalize();
-                        double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
-                        if (targetAngle < coneAngle) {
+                double entityDistance = targetPos.distanceTo(startPoint);
+                
+                // Check distance and angle first (cheap checks)
+                if (entityDistance < smallestDistance) {
+                    // Potential match by distance, check if the entity is inside the cone
+                    normalizedEntityVector.set(targetPos).subtract(startPoint).normalize();
+                    double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
+                    if (targetAngle < coneAngle) {
+                        // Passed cheap checks, now do expensive LOS check
+                        if (world.getBlockHit(startPoint, targetVector) == null) {
                             smallestDistance = entityDistance;
                             vehicleTarget = vehicle;
                         }

@@ -858,7 +858,12 @@ public class EntityVehicleF_Physics extends AEntityVehicleE_Powered {
                                     return missilesIncoming.get(missileNumber).targetDistance;
                                 case ("direction"): {
                                     Point3D missilePos = missilesIncoming.get(missileNumber).position;
-                                    return Math.toDegrees(Math.atan2(-missilePos.z + position.z, -missilePos.x + position.x)) + 90 + orientation.angles.y;
+                                    double delta = Math.toDegrees(Math.atan2(-missilePos.z + position.z, -missilePos.x + position.x)) + 90 + orientation.angles.y;
+                                    while (delta < -180)
+                                        delta += 360;
+                                    while (delta > 180)
+                                        delta -= 360;
+                                    return delta;
                                 }
                             }
                         } else if (world.isClient() && missilesIncomingStubs.size() > missileNumber) {
@@ -867,7 +872,12 @@ public class EntityVehicleF_Physics extends AEntityVehicleE_Powered {
                                     return missilesIncomingStubs.get(missileNumber).trackingData;
                                 case ("direction"): {
                                     Point3D missilePos = missilesIncomingStubs.get(missileNumber).position;
-                                    return Math.toDegrees(Math.atan2(-missilePos.z + position.z, -missilePos.x + position.x)) + 90 + orientation.angles.y;
+                                    double delta = Math.toDegrees(Math.atan2(-missilePos.z + position.z, -missilePos.x + position.x)) + 90 + orientation.angles.y;
+                                    while (delta < -180)
+                                        delta += 360;
+                                    while (delta > 180)
+                                        delta -= 360;
+                                    return delta;
                                 }
                             }
                         }
@@ -883,17 +893,42 @@ public class EntityVehicleF_Physics extends AEntityVehicleE_Powered {
                         final int radarNumber = Integer.parseInt(parsedVariable[1]) - 1;
                         switch (parsedVariable[2]) {
                             case ("detected"):
-                                return new ComputedVariable(this, variable, partialTicks -> radarsTracking.size() > radarNumber ? 1 : 0, false);
+                                return new ComputedVariable(this, variable, partialTicks -> {
+                                    //Use actual radars when loaded, fall back to stubs on client.
+                                    if (radarsTracking.size() > radarNumber) {
+                                        return 1;
+                                    } else if (world.isClient() && radarsTrackingStubs.size() > radarNumber) {
+                                        return 1;
+                                    }
+                                    return 0;
+                                }, false);
                             case ("distance"):
-                                return new ComputedVariable(this, variable, partialTicks -> radarsTracking.size() > radarNumber ? radarsTracking.get(radarNumber).position.distanceTo(position) : 0, false);
+                                return new ComputedVariable(this, variable, partialTicks -> {
+                                    //Use actual radars when loaded, fall back to stubs on client.
+                                    if (radarsTracking.size() > radarNumber) {
+                                        return radarsTracking.get(radarNumber).position.distanceTo(position);
+                                    } else if (world.isClient() && radarsTrackingStubs.size() > radarNumber) {
+                                        return radarsTrackingStubs.get(radarNumber).position.distanceTo(position);
+                                    }
+                                    return 0;
+                                }, false);
                             case ("direction"): {
                                 return new ComputedVariable(this, variable, partialTicks -> {
-                                    if(radarsTracking.size() > radarNumber) {
+                                    //Use actual radars when loaded, fall back to stubs on client.
+                                    double delta = 0;
+                                    if (radarsTracking.size() > radarNumber) {
                                         Point3D entityPos = radarsTracking.get(radarNumber).position;
-                                        return Math.toDegrees(Math.atan2(-entityPos.z + position.z, -entityPos.x + position.x)) + 90 + orientation.angles.y;   
-                                    }else {
-                                        return 0;
+                                        delta = Math.toDegrees(Math.atan2(-entityPos.z + position.z, -entityPos.x + position.x)) + 90 + orientation.angles.y;
+                                    } else if (world.isClient() && radarsTrackingStubs.size() > radarNumber) {
+                                        Point3D entityPos = radarsTrackingStubs.get(radarNumber).position;
+                                        delta = Math.toDegrees(Math.atan2(-entityPos.z + position.z, -entityPos.x + position.x)) + 90 + orientation.angles.y;
                                     }
+                                    //Wrap angle to -180 to 180 range
+                                    while (delta < -180)
+                                        delta += 360;
+                                    while (delta > 180)
+                                        delta -= 360;
+                                    return delta;
                                 }, false);
                             }
                         }
