@@ -159,8 +159,6 @@ public class PartGun extends APart {
     private UUID prevTargetUUID = null;
 
     //Global data.
-    private static final int RAYTRACE_DISTANCE = 750;
-    private static final double DEFAULT_CONE_ANGLE = 2.0;
     private static final int PITCH_RECOIL_CLAMPING = 80;
 
     public PartGun(AEntityF_Multipart<?> entityOn, IWrapperPlayer placingPlayer, JSONPartDefinition placementDefinition, ItemPartGun item, IWrapperNBT data) {
@@ -608,7 +606,7 @@ public class PartGun extends APart {
             }
 
             //Handle reload delay and recoil.
-            if (state.isAtLeast(GunState.FIRING_CURRENTLY) || cooldownTimeRemaining != 0) {
+            if (state.isAtLeast(GunState.FIRING_CURRENTLY) || (cooldownTimeRemaining != 0 && !isSemiAutoVar.isActive)) {
                 reloadDelayRemaining = definition.gun.reloadDelay;
             } else {
                 if (reloadDelayRemaining > 0) {
@@ -938,6 +936,7 @@ public class PartGun extends APart {
                             }
                         }
                     }
+                    updateTargetRegistration();
                 }
 
                 //Update target registration after all target finding is complete.
