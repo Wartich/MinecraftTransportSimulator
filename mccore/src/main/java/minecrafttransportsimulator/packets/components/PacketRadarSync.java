@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
+import minecrafttransportsimulator.baseclasses.EntityManager;
 import minecrafttransportsimulator.baseclasses.Point3D;
 import minecrafttransportsimulator.baseclasses.RotationMatrix;
 import minecrafttransportsimulator.blocks.components.ABlockBase.Axis;
@@ -38,7 +39,8 @@ public class PacketRadarSync extends APacketBase {
     private final List<MissileLockData> missilesIncomingData;
     private final int gunsLockedOnCount;
 
-    public PacketRadarSync(UUID radarEntityUUID, Point3D radarPosition, List<RadarContactData> aircraftContacts, List<RadarContactData> grounderContacts, List<UUID> trackedVehicleUUIDs, List<MissileLockData> missilesIncomingData, int gunsLockedOnCount) {
+    // Private constructor - use factory methods instead
+    private PacketRadarSync(UUID radarEntityUUID, Point3D radarPosition, List<RadarContactData> aircraftContacts, List<RadarContactData> grounderContacts, List<UUID> trackedVehicleUUIDs, List<MissileLockData> missilesIncomingData, int gunsLockedOnCount) {
         super(null);
         this.radarEntityUUID = radarEntityUUID;
         this.radarPosition = radarPosition;
@@ -48,22 +50,71 @@ public class PacketRadarSync extends APacketBase {
         this.missilesIncomingData = missilesIncomingData;
         this.gunsLockedOnCount = gunsLockedOnCount;
     }
+    
+    // Factory method for GLOBAL packets (with full position data)
+    public static PacketRadarSync createGlobalPacket(List<RadarContactData> aircraftContacts, List<RadarContactData> grounderContacts) {
+        return new PacketRadarSync(null, null, aircraftContacts, grounderContacts, new ArrayList<>(), new ArrayList<>(), 0);
+    }
+    
+    // Factory method for PER-RADAR packets (only UUIDs, clients look up positions from global cache)
+    public static PacketRadarSync createRadarPacket(UUID radarEntityUUID, Point3D radarPosition, List<UUID> aircraftUUIDs, List<UUID> grounderUUIDs, List<UUID> trackedVehicleUUIDs, List<MissileLockData> missilesIncomingData, int gunsLockedOnCount) {
+        // Convert UUIDs to RadarContactData with null positions (will be looked up from cache)
+        List<RadarContactData> aircraftContacts = new ArrayList<>();
+        for (UUID uuid : aircraftUUIDs) {
+            aircraftContacts.add(new RadarContactData(uuid, null, 0, null));
+        }
+        List<RadarContactData> grounderContacts = new ArrayList<>();
+        for (UUID uuid : grounderUUIDs) {
+            grounderContacts.add(new RadarContactData(uuid, null, 0, null));
+        }
+        return new PacketRadarSync(radarEntityUUID, radarPosition, aircraftContacts, grounderContacts, trackedVehicleUUIDs, missilesIncomingData, gunsLockedOnCount);
+    }
+    
+    // Factory method for BULLET SELF-SYNC packets (isLongRange bullets syncing their hit data)
+    public static PacketRadarSync createBulletSyncPacket(UUID bulletUUID, Point3D bulletPosition, List<MissileLockData> missileData) {
+        return new PacketRadarSync(bulletUUID, bulletPosition, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), missileData, 0);
+    }
 
     public PacketRadarSync(ByteBuf buf) {
         super(buf);
-        this.radarEntityUUID = readUUIDFromBuffer(buf);
-        this.radarPosition = readPoint3dFromBuffer(buf);
+        
+        //Read flag to check if this is a global packet
+        boolean isGlobalPacket = buf.readBoolean();
+        
+        if (isGlobalPacket) {
+            this.radarEntityUUID = null;
+            this.radarPosition = null;
+        } else {
+            this.radarEntityUUID = readUUIDFromBuffer(buf);
+            this.radarPosition = readPoint3dFromBuffer(buf);
+        }
 
         int aircraftCount = buf.readInt();
         this.aircraftContacts = new ArrayList<>(aircraftCount);
         for (int i = 0; i < aircraftCount; i++) {
-            aircraftContacts.add(new RadarContactData(readUUIDFromBuffer(buf), readPoint3dFromBuffer(buf), buf.readDouble(), readPoint3dFromBuffer(buf)));
+            UUID uuid = readUUIDFromBuffer(buf);
+            boolean hasPositionData = buf.readBoolean();
+            if (hasPositionData) {
+                // Global packet - has full position data
+                aircraftContacts.add(new RadarContactData(uuid, readPoint3dFromBuffer(buf), buf.readDouble(), readPoint3dFromBuffer(buf)));
+            } else {
+                // Per-radar packet - only UUID (position looked up from cache)
+                aircraftContacts.add(new RadarContactData(uuid, null, 0, null));
+            }
         }
         
         int grounderCount = buf.readInt();
         this.grounderContacts = new ArrayList<>(grounderCount);
         for (int i = 0; i < grounderCount; i++) {
-            grounderContacts.add(new RadarContactData(readUUIDFromBuffer(buf), readPoint3dFromBuffer(buf), buf.readDouble(), readPoint3dFromBuffer(buf)));
+            UUID uuid = readUUIDFromBuffer(buf);
+            boolean hasPositionData = buf.readBoolean();
+            if (hasPositionData) {
+                // Global packet - has full position data
+                grounderContacts.add(new RadarContactData(uuid, readPoint3dFromBuffer(buf), buf.readDouble(), readPoint3dFromBuffer(buf)));
+            } else {
+                // Per-radar packet - only UUID (position looked up from cache)
+                grounderContacts.add(new RadarContactData(uuid, null, 0, null));
+            }
         }
 
         int trackedCount = buf.readInt();
@@ -99,23 +150,40 @@ public class PacketRadarSync extends APacketBase {
     @Override
     public void writeToBuffer(ByteBuf buf) {
         super.writeToBuffer(buf);
-        writeUUIDToBuffer(radarEntityUUID, buf);
-        writePoint3dToBuffer(radarPosition, buf);
+        
+        //Write flag to indicate if this is a global packet (radarEntityUUID is null)
+        boolean isGlobalPacket = (radarEntityUUID == null);
+        buf.writeBoolean(isGlobalPacket);
+        
+        if (!isGlobalPacket) {
+            writeUUIDToBuffer(radarEntityUUID, buf);
+            writePoint3dToBuffer(radarPosition, buf);
+        }
 
         buf.writeInt(aircraftContacts.size());
         for (RadarContactData contact : aircraftContacts) {
             writeUUIDToBuffer(contact.uuid, buf);
-            writePoint3dToBuffer(contact.position, buf);
-            buf.writeDouble(contact.velocity);
-            writePoint3dToBuffer(contact.motion, buf);
+            // For per-radar packets, position is null (only UUID sent)
+            // For global packets, position has data
+            boolean hasPositionData = (contact.position != null);
+            buf.writeBoolean(hasPositionData);
+            if (hasPositionData) {
+                writePoint3dToBuffer(contact.position, buf);
+                buf.writeDouble(contact.velocity);
+                writePoint3dToBuffer(contact.motion, buf);
+            }
         }
         
         buf.writeInt(grounderContacts.size());
         for (RadarContactData contact : grounderContacts) {
             writeUUIDToBuffer(contact.uuid, buf);
-            writePoint3dToBuffer(contact.position, buf);
-            buf.writeDouble(contact.velocity);
-            writePoint3dToBuffer(contact.motion, buf);
+            boolean hasPositionData = (contact.position != null);
+            buf.writeBoolean(hasPositionData);
+            if (hasPositionData) {
+                writePoint3dToBuffer(contact.position, buf);
+                buf.writeDouble(contact.velocity);
+                writePoint3dToBuffer(contact.motion, buf);
+            }
         }
 
         buf.writeInt(trackedVehicleUUIDs.size());
@@ -151,7 +219,46 @@ public class PacketRadarSync extends APacketBase {
 
     @Override
     public void handle(AWrapperWorld world) {
-        //Find the radar entity and update its radar contacts
+        //Check if this is global vehicle data (radarEntityUUID is null)
+        if (radarEntityUUID == null) {
+            //Global vehicle position sync - update world's global vehicle cache
+            //This allows guns without radars to lock distant targets
+            long currentTime = world.getTime();
+            
+            //Update cache with aircraft data
+            for (RadarContactData contact : aircraftContacts) {
+                EntityManager.GlobalVehicleData data = new EntityManager.GlobalVehicleData(
+                    contact.uuid,
+                    contact.position.copy(),
+                    contact.motion.copy(),
+                    true, // isAircraft
+                    currentTime
+                );
+                world.globalVehicleCache.put(contact.uuid, data);
+            }
+            
+            //Update cache with grounder data
+            for (RadarContactData contact : grounderContacts) {
+                EntityManager.GlobalVehicleData data = new EntityManager.GlobalVehicleData(
+                    contact.uuid,
+                    contact.position.copy(),
+                    contact.motion.copy(),
+                    false, // isAircraft
+                    currentTime
+                );
+                world.globalVehicleCache.put(contact.uuid, data);
+            }
+            
+            //Clean up stale entries (not updated in last 20 ticks / 1 second)
+            //Use a simple counter-based approach since world time can vary
+            world.globalVehicleCache.entrySet().removeIf(
+                entry -> currentTime - entry.getValue().lastUpdateTick > 20
+            );
+            
+            return;
+        }
+        
+        //Find the radar entity and update its radar contacts (per-radar data for RWR)
         AEntityD_Definable<?> entity = world.getEntity(radarEntityUUID);
         if (entity != null) {
             entity.setRadarContacts(aircraftContacts, grounderContacts);

@@ -11,6 +11,7 @@ import minecrafttransportsimulator.baseclasses.BlockHitResult;
 import minecrafttransportsimulator.baseclasses.BoundingBox;
 import minecrafttransportsimulator.baseclasses.ColorRGB;
 import minecrafttransportsimulator.baseclasses.ComputedVariable;
+import minecrafttransportsimulator.baseclasses.EntityManager;
 import minecrafttransportsimulator.baseclasses.Point3D;
 import minecrafttransportsimulator.baseclasses.RotationMatrix;
 import minecrafttransportsimulator.baseclasses.TransformationMatrix;
@@ -1477,26 +1478,6 @@ public class PartGun extends APart {
     }
 
     /**
-     * Registers this gun with the target vehicle's gunsLockedOn list.
-     */
-    private void registerWithTargetVehicle() {
-        //Register via engineTarget if available.
-        if (engineTarget != null && engineTarget.vehicleOn != null && engineTarget.vehicleOn != vehicleOn) {
-            AEntityVehicleE_Powered targetVehicle = engineTarget.vehicleOn;
-            if (!targetVehicle.gunsLockedOn.contains(this)) {
-                targetVehicle.gunsLockedOn.add(this);
-            }
-        }
-        //Register via targetUUID if available (for targets beyond render distance).
-        if (targetUUID != null && vehicleOn != null && !targetUUID.equals(vehicleOn.uniqueUUID)) {
-            EntityVehicleF_Physics targetVehicle = world.getEntity(targetUUID);
-            if (targetVehicle != null && !targetVehicle.gunsLockedOn.contains(this)) {
-                targetVehicle.gunsLockedOn.add(this);
-            }
-        }
-    }
-
-    /**
      * Updates target registration. Call this whenever entityTarget, engineTarget, or targetUUID changes.
      */
     public void updateTargetRegistration() {
@@ -1504,7 +1485,21 @@ public class PartGun extends APart {
         if (engineTarget != prevEngineTarget || !java.util.Objects.equals(targetUUID, prevTargetUUID)) {
             prevEngineTarget = engineTarget;
             prevTargetUUID = targetUUID;
-            registerWithTargetVehicle();
+            
+            //Register via engineTarget if available.
+            if (engineTarget != null && engineTarget.vehicleOn != null && engineTarget.vehicleOn != vehicleOn) {
+                AEntityVehicleE_Powered targetVehicle = engineTarget.vehicleOn;
+                if (!targetVehicle.gunsLockedOn.contains(this)) {
+                    targetVehicle.gunsLockedOn.add(this);
+                }
+            }
+            //Register via targetUUID if available (for targets beyond render distance).
+            if (targetUUID != null && vehicleOn != null && !targetUUID.equals(vehicleOn.uniqueUUID)) {
+                EntityVehicleF_Physics targetVehicle = world.getEntity(targetUUID);
+                if (targetVehicle != null && !targetVehicle.gunsLockedOn.contains(this)) {
+                    targetVehicle.gunsLockedOn.add(this);
+                }
+            }
         }
         // Note: entityTarget targets are players/mobs, not vehicles, so we don't register for those
         prevEntityTarget = entityTarget;
@@ -1660,16 +1655,27 @@ public class PartGun extends APart {
 
     /**
      * Finds a vehicle target and sets targetUUID. Used for DEFAULT and BORESIGHT lock-on types.
-     * For isLongRange guns: uses radar target position for lock-on (includes offset/animations).
-     * For non-isLongRange guns: uses actual vehicle position.
-     * Returns the vehicle if found in loaded entities, null otherwise (but targetUUID may still be set from stubs).
+     * For isLongRange guns: uses global cache (no LOS check, like radars).
+     * For non-isLongRange guns: uses loaded entities with LOS check.
+     * Returns the vehicle if found in loaded entities, null otherwise (but targetUUID may still be set from cache).
      */
     private EntityVehicleF_Physics findAndSetTargetUUID(Point3D startPoint, Point3D searchVector, double coneAngle) {
         normalizedConeVector.set(searchVector).normalize();
-        EntityVehicleF_Physics vehicleTarget = null;
-        double smallestDistance = searchVector.length();
+        double searchDistance = searchVector.length();
 
-        // Check loaded entities (works on both server and client)
+        // isLongRange guns use global cache only (no LOS check, like radars)
+        if (world.isClient() && definition.gun.isLongRange) {
+            UUID stubUUID = findTargetInGlobalCache(startPoint, normalizedConeVector, coneAngle, searchDistance);
+            if (stubUUID != null) {
+                targetUUID = stubUUID;
+            }
+            return null;
+        }
+
+        // Non-isLongRange guns check loaded entities with LOS
+        EntityVehicleF_Physics vehicleTarget = null;
+        double smallestDistance = searchDistance;
+
         for (EntityVehicleF_Physics vehicle : world.getEntitiesOfType(EntityVehicleF_Physics.class)) {
             // Make sure we don't lock-on to our own vehicle
             if (vehicle != vehicleOn && !vehicle.outOfHealth) {
@@ -1679,10 +1685,8 @@ public class PartGun extends APart {
                     continue;
                 }
 
-                // Get the position to use for targeting
-                // For isLongRange: use radar target position (with offset/animations)
-                // For non-isLongRange: use actual vehicle position
-                Point3D targetPos = getVehicleTargetPosition(vehicle);
+                // Use actual vehicle position for non-isLongRange guns
+                Point3D targetPos = vehicle.position;
 
                 targetVector.set(targetPos).subtract(startPoint);
                 double entityDistance = targetPos.distanceTo(startPoint);
@@ -1707,15 +1711,6 @@ public class PartGun extends APart {
         if (vehicleTarget != null) {
             targetUUID = vehicleTarget.uniqueUUID;
             return vehicleTarget;
-        }
-
-        // On client, check radar stubs only for longRange guns (they can track beyond render distance)
-        // Non-longRange guns should only target loaded entities
-        if (world.isClient() && vehicleOn != null && definition.gun.isLongRange) {
-            UUID stubUUID = findTargetInRadarStubs(startPoint, normalizedConeVector, coneAngle, smallestDistance);
-            if (stubUUID != null) {
-                targetUUID = stubUUID;
-            }
         }
 
         return null;
@@ -1755,6 +1750,50 @@ public class PartGun extends APart {
                         smallestDistance = entityDistance;
                         closestUUID = stub.entityUUID;
                     }
+                }
+            }
+        }
+
+        return closestUUID;
+    }
+    
+    /**
+     * Helper method to find a target in global vehicle cache. Client-side only.
+     * This allows guns without radars (handheld weapons) to lock distant targets.
+     */
+    private UUID findTargetInGlobalCache(Point3D startPoint, Point3D normalizedConeVector, double coneAngle, double maxDistance) {
+        UUID closestUUID = null;
+        double smallestDistance = maxDistance;
+
+        // Check global vehicle cache
+        for (EntityManager.GlobalVehicleData vehicleData : world.globalVehicleCache.values()) {
+            // Check target type
+            if ((definition.gun.targetType == TargetType.AIRCRAFT && !vehicleData.isAircraft) ||
+                (definition.gun.targetType == TargetType.GROUND && vehicleData.isAircraft)) {
+                continue;
+            }
+
+            // Don't target ourselves
+            if (vehicleOn != null && vehicleData.uuid.equals(vehicleOn.uniqueUUID)) {
+                continue;
+            }
+            
+            // If the vehicle is loaded, check if it's destroyed or not radar visible
+            EntityVehicleF_Physics loadedVehicle = world.getEntity(vehicleData.uuid);
+            if (loadedVehicle != null) {
+                if (loadedVehicle.outOfHealth || !loadedVehicle.isRadarVisible()) {
+                    continue;
+                }
+            }
+
+            double entityDistance = vehicleData.position.distanceTo(startPoint);
+            if (entityDistance < smallestDistance) {
+                // Potential match by distance, check if the entity is inside the cone
+                normalizedEntityVector.set(vehicleData.position).subtract(startPoint).normalize();
+                double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
+                if (targetAngle < coneAngle) {
+                    smallestDistance = entityDistance;
+                    closestUUID = vehicleData.uuid;
                 }
             }
         }

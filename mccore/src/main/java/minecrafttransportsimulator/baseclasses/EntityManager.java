@@ -10,8 +10,11 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import minecrafttransportsimulator.baseclasses.Point3D;
+import minecrafttransportsimulator.baseclasses.RotationMatrix;
 import minecrafttransportsimulator.entities.components.AEntityA_Base;
 import minecrafttransportsimulator.entities.components.AEntityA_Base.EntityAutoUpdateTime;
+import minecrafttransportsimulator.entities.components.AEntityB_Existing;
 import minecrafttransportsimulator.entities.components.AEntityC_Renderable;
 import minecrafttransportsimulator.entities.components.AEntityD_Definable;
 import minecrafttransportsimulator.entities.components.AEntityF_Multipart;
@@ -27,6 +30,7 @@ import minecrafttransportsimulator.mcinterface.AWrapperWorld;
 import minecrafttransportsimulator.mcinterface.IWrapperEntity;
 import minecrafttransportsimulator.mcinterface.IWrapperNBT;
 import minecrafttransportsimulator.mcinterface.InterfaceManager;
+import minecrafttransportsimulator.packets.components.PacketRadarSync;
 import minecrafttransportsimulator.systems.CameraSystem;
 
 /**
@@ -46,6 +50,14 @@ public abstract class EntityManager {
     private final ConcurrentHashMap<UUID, AEntityA_Base> trackedEntityMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, PartGun> gunMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Map<Integer, EntityBullet>> bulletMap = new ConcurrentHashMap<>();
+    
+    //Global radar detection - runs once per world instead of per radar
+    private int globalRadarTickCounter = 0;
+    private static final int GLOBAL_RADAR_SYNC_INTERVAL = 20; // 1 second
+    
+    //Global vehicle data cache - stores all vehicle positions for client-side access
+    //This allows guns without radars to lock distant targets
+    public final Map<UUID, GlobalVehicleData> globalVehicleCache = new ConcurrentHashMap<>();
     
     private static final byte hotloadCountdownPreset = 20;
     private static byte hotloadCountdown;
@@ -221,6 +233,15 @@ public abstract class EntityManager {
             if (hotloadStep > 0) {
                 doHotload();
             }
+            
+            //Perform global radar detection on server
+            if (!world.isClient()) {
+                ++globalRadarTickCounter;
+                if (globalRadarTickCounter >= GLOBAL_RADAR_SYNC_INTERVAL) {
+                    globalRadarTickCounter = 0;
+                    performGlobalRadarDetection(world);
+                }
+            }
         } else {
             allPlayerDefinableTickableEntities.forEach(definable -> definable.setVariableDefaults());
             allPlayerDefinableTickableEntities.forEach(definable -> definable.updateVariableModifiers());
@@ -231,6 +252,156 @@ public abstract class EntityManager {
             });
         }
         world.endProfiling();
+    }
+    
+    /**
+     * Performs global radar detection for all vehicles in the world.
+     * This runs once per world instead of per-radar, detecting all vehicles once.
+     * Sends global vehicle data to all clients, then each radar filters by cone/range.
+     */
+    private void performGlobalRadarDetection(AWrapperWorld world) {
+        //Get all vehicles in the world
+        ConcurrentLinkedQueue<EntityVehicleF_Physics> allVehicles = getEntitiesOfType(EntityVehicleF_Physics.class);
+        
+        //Collect all visible vehicles (not destroyed, radar visible)
+        List<EntityVehicleF_Physics> visibleVehicles = new ArrayList<>();
+        for (EntityVehicleF_Physics vehicle : allVehicles) {
+            if (!vehicle.outOfHealth && vehicle.isRadarVisible()) {
+                visibleVehicles.add(vehicle);
+            }
+        }
+        
+        //Build global vehicle data for ALL clients (not just radars)
+        //This allows handheld weapons to lock distant targets
+        List<PacketRadarSync.RadarContactData> allAircraftData = new ArrayList<>();
+        List<PacketRadarSync.RadarContactData> allGrounderData = new ArrayList<>();
+        
+        for (EntityVehicleF_Physics vehicle : visibleVehicles) {
+            Point3D radarPos = vehicle.getRadarTargetPosition();
+            PacketRadarSync.RadarContactData contactData = new PacketRadarSync.RadarContactData(
+                vehicle.uniqueUUID,
+                radarPos,
+                vehicle.motion.length(),
+                vehicle.motion
+            );
+            
+            if (vehicle.definition.motorized.isAircraft) {
+                allAircraftData.add(contactData);
+            } else {
+                allGrounderData.add(contactData);
+            }
+        }
+        
+        //Send global vehicle data to ALL clients (null radarEntityUUID means global data)
+        //Clients will store this in globalVehicleCache for gun lock-on
+        if (!allAircraftData.isEmpty() || !allGrounderData.isEmpty()) {
+            InterfaceManager.packetInterface.sendToAllClients(
+                PacketRadarSync.createGlobalPacket(allAircraftData, allGrounderData)
+            );
+        }
+        
+        //Now process each radar entity to filter the global vehicle list for radar displays and RWR
+        for (AEntityD_Definable<?> entity : allNormalDefinableTickableEntities) {
+            if (entity.definition.general != null && entity.definition.general.radarRange > 0) {
+                //Skip destroyed vehicles
+                if (entity instanceof EntityVehicleF_Physics && ((EntityVehicleF_Physics) entity).outOfHealth) {
+                    entity.aircraftOnRadar.clear();
+                    entity.groundersOnRadar.clear();
+                    continue;
+                }
+                
+                //Filter global vehicle list by this radar's cone and range
+                entity.aircraftOnRadar.clear();
+                entity.groundersOnRadar.clear();
+                
+                //Calculate radar's forward direction
+                Point3D searchVector = new Point3D(0, 0, entity.definition.general.radarRange).rotate(entity.orientation).normalize();
+                Point3D LOSVector = new Point3D();
+                double coneAngle = entity.definition.general.radarWidth;
+                
+                InterfaceManager.coreInterface.logError("DEBUG RADAR: Entity " + entity.uniqueUUID + " radarRange=" + entity.definition.general.radarRange + " coneAngle=" + coneAngle);
+                
+                for (EntityVehicleF_Physics vehicle : visibleVehicles) {
+                    //Skip self
+                    if (vehicle == entity) {
+                        continue;
+                    }
+                    
+                    //Get the vehicle's radar target position
+                    Point3D vehicleRadarPos = vehicle.getRadarTargetPosition();
+                    
+                    //Check if vehicle is within radar cone and range
+                    LOSVector.set(vehicleRadarPos).subtract(entity.position).normalize();
+                    double angle = Math.abs(Math.toDegrees(Math.acos(searchVector.dotProduct(LOSVector, false))));
+                    double distance = vehicleRadarPos.distanceTo(entity.position);
+                    
+                    InterfaceManager.coreInterface.logError("DEBUG RADAR: Checking vehicle " + vehicle.uniqueUUID + " angle=" + angle + " distance=" + distance + " inCone=" + (angle < coneAngle) + " inRange=" + (distance < entity.definition.general.radarRange));
+                    
+                    if (angle < coneAngle && vehicleRadarPos.isDistanceToCloserThan(entity.position, entity.definition.general.radarRange)) {
+                        //Vehicle is detected by this radar
+                        InterfaceManager.coreInterface.logError("DEBUG RADAR: DETECTED vehicle " + vehicle.uniqueUUID);
+                        if (vehicle.definition.motorized.isAircraft) {
+                            entity.aircraftOnRadar.add(vehicle);
+                        } else {
+                            entity.groundersOnRadar.add(vehicle);
+                        }
+                        
+                        //Update RWR tracking
+                        if (!vehicle.radarsTracking.contains(entity)) {
+                            vehicle.radarsTracking.add(entity);
+                        }
+                    }
+                }
+                
+                //Sort by distance
+                entity.aircraftOnRadar.sort((o1, o2) -> entity.position.isFirstCloserThanSecond(o1.position, o2.position) ? -1 : 1);
+                entity.groundersOnRadar.sort((o1, o2) -> entity.position.isFirstCloserThanSecond(o1.position, o2.position) ? -1 : 1);
+                
+                //Sync radar-specific data to clients (for RWR tracking)
+                //Only send UUIDs - clients will look up positions from global cache
+                List<UUID> aircraftUUIDs = new ArrayList<>();
+                List<UUID> grounderUUIDs = new ArrayList<>();
+                List<UUID> trackedVehicleUUIDs = new ArrayList<>();
+                
+                for (AEntityB_Existing contact : entity.aircraftOnRadar) {
+                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
+                    aircraftUUIDs.add(vehicle.uniqueUUID);
+                    trackedVehicleUUIDs.add(vehicle.uniqueUUID);
+                }
+                for (AEntityB_Existing contact : entity.groundersOnRadar) {
+                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
+                    grounderUUIDs.add(vehicle.uniqueUUID);
+                    trackedVehicleUUIDs.add(vehicle.uniqueUUID);
+                }
+                
+                //Get missile data if this is a vehicle
+                List<PacketRadarSync.MissileLockData> missileData = new ArrayList<>();
+                int lockedOnCount = 0;
+                if (entity instanceof EntityVehicleF_Physics) {
+                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) entity;
+                    for (EntityBullet missile : vehicle.missilesIncoming) {
+                        //Convert orientation angles before sending
+                        missile.orientation.convertToAngles();
+                        missileData.add(new PacketRadarSync.MissileLockData(
+                            missile.uniqueUUID,
+                            missile.position.copy(),
+                            missile.motion.copy(),
+                            new RotationMatrix().set(missile.orientation),
+                            missile.targetDistance,
+                            missile.gun.lastLoadedBullet,
+                            missile.ticksExisted,
+                            missile.lastHit,
+                            missile.sideHit));
+                    }
+                    lockedOnCount = vehicle.gunsLockedOn.size();
+                }
+                
+                //Send per-radar packet (only UUIDs for filtering, plus RWR and missile data)
+                InterfaceManager.packetInterface.sendToAllClients(
+                    PacketRadarSync.createRadarPacket(entity.uniqueUUID, entity.getRadarTargetPosition(), aircraftUUIDs, grounderUUIDs, trackedVehicleUUIDs, missileData, lockedOnCount)
+                );
+            }
+        }
     }
     
     public void doHotload() {
@@ -482,6 +653,26 @@ public abstract class EntityManager {
     	EntityManager.hotloadFunction = hotloadFunction;
     	hotloadStep = 1;
 	}
+    
+    /**
+     * Simple data class to hold global vehicle information for client-side access.
+     * Allows guns without radars to lock distant targets.
+     */
+    public static class GlobalVehicleData {
+        public final UUID uuid;
+        public final Point3D position;
+        public final Point3D motion;
+        public final boolean isAircraft;
+        public long lastUpdateTick;
+        
+        public GlobalVehicleData(UUID uuid, Point3D position, Point3D motion, boolean isAircraft, long lastUpdateTick) {
+            this.uuid = uuid;
+            this.position = position;
+            this.motion = motion;
+            this.isAircraft = isAircraft;
+            this.lastUpdateTick = lastUpdateTick;
+        }
+    }
     
     @FunctionalInterface
     public static abstract interface HotloadFunction{

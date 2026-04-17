@@ -19,6 +19,7 @@ import java.util.UUID;
 import minecrafttransportsimulator.baseclasses.AnimationSwitchbox;
 import minecrafttransportsimulator.baseclasses.ColorRGB;
 import minecrafttransportsimulator.baseclasses.ComputedVariable;
+import minecrafttransportsimulator.baseclasses.EntityManager;
 import minecrafttransportsimulator.baseclasses.Point3D;
 import minecrafttransportsimulator.baseclasses.RotationMatrix;
 import minecrafttransportsimulator.baseclasses.TransformationMatrix;
@@ -398,89 +399,10 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
         }
         playerCraftedItem = false;
 
-        //Update radar on the server every tick.
-        //Server does the detection to support vehicles outside client render distance.
-        //Results are synced to clients via packets.
-        if (definition.general.radarRange > 0) {
-            if (!world.isClient()) {
-                //Server-side: detect vehicles and sync to clients
-                Collection<EntityVehicleF_Physics> allVehicles = world.getEntitiesOfType(EntityVehicleF_Physics.class);
-                aircraftOnRadar.clear();
-                groundersOnRadar.clear();
-                
-                //Calculate radar's forward direction once per tick, not per vehicle
-                Point3D searchVector = new Point3D(0, 0, definition.general.radarRange).rotate(orientation).normalize();
-                Point3D LOSVector = new Point3D();
-                double coneAngle = definition.general.radarWidth;
-                
-                for (EntityVehicleF_Physics vehicle : allVehicles) {
-                    //Check if vehicle is visible to radar
-                    if (!vehicle.isRadarVisible()) {
-                        continue;
-                    }
+        //Radar detection is now handled globally by EntityManager.performGlobalRadarDetection()
+        //This runs once per world and filters vehicles for each radar
+        //On client, radar lists are populated by PacketRadarSync from server
 
-                    //Get the vehicle's radar target position for detection
-                    Point3D vehicleRadarPos = vehicle.getRadarTargetPosition();
-
-                    LOSVector.set(vehicleRadarPos).subtract(position).normalize();
-                    double angle = Math.abs(Math.toDegrees(Math.acos(searchVector.dotProduct(LOSVector, false))));
-                    if (!vehicle.outOfHealth && vehicle != this && (angle < coneAngle && vehicleRadarPos.isDistanceToCloserThan(position, definition.general.radarRange))) {
-                        if (vehicle.definition.motorized.isAircraft) {
-                            aircraftOnRadar.add(vehicle);
-                        } else {
-                            groundersOnRadar.add(vehicle);
-                        }
-                        if (!vehicle.radarsTracking.contains(this)) {
-                            vehicle.radarsTracking.add(this);
-                        }
-                    }
-                }
-                aircraftOnRadar.sort(entityComparator);
-                groundersOnRadar.sort(entityComparator);
-
-                //Sync radar data to all clients
-                //On server, these lists only contain EntityVehicleF_Physics (no stubs), so no instanceof check needed
-                List<RadarContactData> aircraftData = new ArrayList<>();
-                List<RadarContactData> grounderData = new ArrayList<>();
-                List<UUID> trackedVehicleUUIDs = new ArrayList<>();
-                for (AEntityB_Existing contact : aircraftOnRadar) {
-                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
-                    aircraftData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
-                    trackedVehicleUUIDs.add(vehicle.uniqueUUID);
-                }
-                for (AEntityB_Existing contact : groundersOnRadar) {
-                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) contact;
-                    grounderData.add(new RadarContactData(vehicle.uniqueUUID, vehicle.getRadarTargetPosition(), vehicle.motion.length(), vehicle.motion));
-                    trackedVehicleUUIDs.add(vehicle.uniqueUUID);
-                }
-
-                //Get missile data if this is a vehicle
-                List<MissileLockData> missileData = new ArrayList<>();
-                int lockedOnCount = 0;
-                if (this instanceof EntityVehicleF_Physics) {
-                    EntityVehicleF_Physics vehicle = (EntityVehicleF_Physics) this;
-                    for (EntityBullet missile : vehicle.missilesIncoming) {
-                        //Convert orientation angles before sending
-                        missile.orientation.convertToAngles();
-                        missileData.add(new MissileLockData(
-                            missile.uniqueUUID, 
-                            missile.position.copy(), 
-                            missile.motion.copy(),
-                            new RotationMatrix().set(missile.orientation),
-                            missile.targetDistance,
-                            missile.gun.lastLoadedBullet,
-                            missile.ticksExisted,
-                            missile.lastHit,
-                            missile.sideHit));
-                    }
-                    lockedOnCount = vehicle.gunsLockedOn.size();
-                }
-
-                InterfaceManager.packetInterface.sendToAllClients(new PacketRadarSync(uniqueUUID, getRadarTargetPosition(), aircraftData, grounderData, trackedVehicleUUIDs, missileData, lockedOnCount));
-            }
-            //On client, radar lists are populated by PacketRadarSync from server
-
-        }
         world.endProfiling();
     }
 
@@ -567,59 +489,112 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
      * by receiving position/velocity data from the server.
      */
     public void setRadarContacts(List<RadarContactData> aircraftContacts, List<RadarContactData> grounderContacts) {
-        //Remove stale stubs that haven't been updated in 60 ticks (3 seconds)
-        //This handles cases where radar stops detecting a contact
-        aircraftOnRadar.removeIf(stub -> stub instanceof RemoteEntityStub && ((RemoteEntityStub) stub).lastUpdateTick < ticksExisted - 60);
-        groundersOnRadar.removeIf(stub -> stub instanceof RemoteEntityStub && ((RemoteEntityStub) stub).lastUpdateTick < ticksExisted - 60);
-
-        //Update or create stub entities for each contact using synced data
-        //This prevents duplicates where one vehicle takes up multiple radar slots
-        for (RadarContactData contact : aircraftContacts) {
-            //Check if we already have a stub for this UUID
-            RemoteEntityStub existingStub = null;
-            for (AEntityB_Existing entity : aircraftOnRadar) {
-                if (entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid)) {
-                    existingStub = (RemoteEntityStub) entity;
-                    break;
-                }
+        //Mark all existing contacts as not updated this sync
+        for (AEntityB_Existing entity : aircraftOnRadar) {
+            if (entity instanceof RemoteEntityStub) {
+                ((RemoteEntityStub) entity).lastUpdateTick = -1;
             }
-            if (existingStub != null) {
-                //Update existing stub with new position, motion, and timestamp
-                existingStub.position.set(contact.position);
-                existingStub.motion.set(contact.motion);
-                existingStub.lastUpdateTick = ticksExisted;
+        }
+        for (AEntityB_Existing entity : groundersOnRadar) {
+            if (entity instanceof RemoteEntityStub) {
+                ((RemoteEntityStub) entity).lastUpdateTick = -1;
+            }
+        }
+        
+        //Track which loaded entities are in the new contact list
+        Set<UUID> updatedLoadedAircraft = new HashSet<>();
+        Set<UUID> updatedLoadedGrounders = new HashSet<>();
+
+        //Update or create entities for each contact
+        //For per-radar packets, position is null - look up from global cache
+        //For global packets (shouldn't call this method), position has data
+        for (RadarContactData contact : aircraftContacts) {
+            //First check if we have a loaded entity for this UUID
+            EntityVehicleF_Physics loadedVehicle = world.getEntity(contact.uuid);
+            if (loadedVehicle != null) {
+                //Remove any stub for this UUID since we have the real entity
+                aircraftOnRadar.removeIf(entity -> entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid));
+                //Use the real loaded entity if available
+                if (!aircraftOnRadar.contains(loadedVehicle)) {
+                    aircraftOnRadar.add(loadedVehicle);
+                }
+                updatedLoadedAircraft.add(contact.uuid);
             } else {
-                //Create new stub
-                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity, contact.motion);
-                stub.lastUpdateTick = ticksExisted;
-                aircraftOnRadar.add(stub);
+                //Look up position from global cache (per-radar packets only send UUIDs)
+                EntityManager.GlobalVehicleData globalData = world.globalVehicleCache.get(contact.uuid);
+                if (globalData != null) {
+                    //Check if we already have a stub for this UUID
+                    RemoteEntityStub existingStub = null;
+                    for (AEntityB_Existing entity : aircraftOnRadar) {
+                        if (entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid)) {
+                            existingStub = (RemoteEntityStub) entity;
+                            break;
+                        }
+                    }
+                    if (existingStub != null) {
+                        //Update existing stub with data from global cache
+                        existingStub.position.set(globalData.position);
+                        existingStub.motion.set(globalData.motion);
+                        existingStub.lastUpdateTick = ticksExisted;
+                    } else {
+                        //Create new stub from global cache data
+                        RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, globalData.position.copy(), RemoteEntityStub.StubType.RADAR_CONTACT, globalData.motion.length(), globalData.motion.copy());
+                        stub.lastUpdateTick = ticksExisted;
+                        aircraftOnRadar.add(stub);
+                    }
+                }
             }
         }
         for (RadarContactData contact : grounderContacts) {
-            //Check if we already have a stub for this UUID
-            RemoteEntityStub existingStub = null;
-            for (AEntityB_Existing entity : groundersOnRadar) {
-                if (entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid)) {
-                    existingStub = (RemoteEntityStub) entity;
-                    break;
+            //First check if we have a loaded entity for this UUID
+            EntityVehicleF_Physics loadedVehicle = world.getEntity(contact.uuid);
+            if (loadedVehicle != null) {
+                //Remove any stub for this UUID since we have the real entity
+                groundersOnRadar.removeIf(entity -> entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid));
+                //Use the real loaded entity if available
+                if (!groundersOnRadar.contains(loadedVehicle)) {
+                    groundersOnRadar.add(loadedVehicle);
+                }
+                updatedLoadedGrounders.add(contact.uuid);
+            } else {
+                //Look up position from global cache (per-radar packets only send UUIDs)
+                EntityManager.GlobalVehicleData globalData = world.globalVehicleCache.get(contact.uuid);
+                if (globalData != null) {
+                    //Check if we already have a stub for this UUID
+                    RemoteEntityStub existingStub = null;
+                    for (AEntityB_Existing entity : groundersOnRadar) {
+                        if (entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).entityUUID.equals(contact.uuid)) {
+                            existingStub = (RemoteEntityStub) entity;
+                            break;
+                        }
+                    }
+                    if (existingStub != null) {
+                        //Update existing stub with data from global cache
+                        existingStub.position.set(globalData.position);
+                        existingStub.motion.set(globalData.motion);
+                        existingStub.lastUpdateTick = ticksExisted;
+                    } else {
+                        //Create new stub from global cache data
+                        RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, globalData.position.copy(), RemoteEntityStub.StubType.RADAR_CONTACT, globalData.motion.length(), globalData.motion.copy());
+                        stub.lastUpdateTick = ticksExisted;
+                        groundersOnRadar.add(stub);
+                    }
                 }
             }
-            if (existingStub != null) {
-                //Update existing stub with new position, motion, and timestamp
-                existingStub.position.set(contact.position);
-                existingStub.motion.set(contact.motion);
-                existingStub.lastUpdateTick = ticksExisted;
-            } else {
-                //Create new stub
-                RemoteEntityStub stub = new RemoteEntityStub(contact.uuid, contact.position, RemoteEntityStub.StubType.RADAR_CONTACT, contact.velocity, contact.motion);
-                stub.lastUpdateTick = ticksExisted;
-                groundersOnRadar.add(stub);
-            }
         }
+        
+        //Remove stubs that weren't updated (no longer detected by radar)
+        aircraftOnRadar.removeIf(entity -> entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).lastUpdateTick < 0);
+        groundersOnRadar.removeIf(entity -> entity instanceof RemoteEntityStub && ((RemoteEntityStub) entity).lastUpdateTick < 0);
+        
+        //Remove loaded entities that are no longer in the contact list
+        aircraftOnRadar.removeIf(entity -> !(entity instanceof RemoteEntityStub) && entity instanceof EntityVehicleF_Physics && !updatedLoadedAircraft.contains(((EntityVehicleF_Physics) entity).uniqueUUID));
+        groundersOnRadar.removeIf(entity -> !(entity instanceof RemoteEntityStub) && entity instanceof EntityVehicleF_Physics && !updatedLoadedGrounders.contains(((EntityVehicleF_Physics) entity).uniqueUUID));
 
         //Sort by distance (required for radar logic)
         aircraftOnRadar.sort(entityComparator);
         groundersOnRadar.sort(entityComparator);
+
     }
 
     /**
@@ -627,8 +602,8 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
      * This allows missile_* and gun lock-on variables to work for entities outside client render distance.
      */
     public void setMissileContacts(List<MissileLockData> missileContacts, int lockedOnCount) {
-        //Remove stale stubs that haven't been updated in 60 ticks (3 seconds)
-        missilesIncomingStubs.removeIf(stub -> stub.lastUpdateTick < ticksExisted - 60);
+        //Remove stale stubs that haven't been updated in 20 ticks (1 second)
+        missilesIncomingStubs.removeIf(stub -> stub.lastUpdateTick < ticksExisted - 20);
 
         gunsLockedOnCount = lockedOnCount;
 
@@ -730,9 +705,9 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
      * Stubs not updated within this time are considered stale and are not counted.
      */
     public boolean isBeingTrackedByRadar() {
-        //Remove stale stubs that haven't been updated in 60 ticks (3 seconds)
+        //Remove stale stubs that haven't been updated in 20 ticks (1 second)
         //This handles cases where a radar stops tracking this entity
-        radarsTrackingStubs.removeIf(stub -> stub.lastUpdateTick < ticksExisted - 60);
+        radarsTrackingStubs.removeIf(stub -> stub.lastUpdateTick < ticksExisted - 20);
         return !radarsTrackingStubs.isEmpty();
     }
 

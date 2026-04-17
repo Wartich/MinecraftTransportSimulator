@@ -247,7 +247,7 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                 //Send to all clients within 1024 blocks
                 //Use a dummy UUID for the "radar entity" since this is bullet-initiated
                 InterfaceManager.packetInterface.sendToAllClients(
-                    new PacketRadarSync(uniqueUUID, position, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), bulletData, 0)
+                    PacketRadarSync.createBulletSyncPacket(uniqueUUID, position, bulletData)
                 );
             }
         }
@@ -903,7 +903,7 @@ public class EntityBullet extends AEntityD_Definable<JSONBullet> {
                     bullet.sideHit
                 ));
                 InterfaceManager.packetInterface.sendToAllClients(
-                    new PacketRadarSync(bullet.uniqueUUID, bullet.position, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), bulletData, 0)
+                    PacketRadarSync.createBulletSyncPacket(bullet.uniqueUUID, bullet.position, bulletData)
                 );
             }
 
