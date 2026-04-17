@@ -319,11 +319,14 @@ public abstract class EntityManager {
                 Point3D LOSVector = new Point3D();
                 double coneAngle = entity.definition.general.radarWidth;
                 
-                InterfaceManager.coreInterface.logError("DEBUG RADAR: Entity " + entity.uniqueUUID + " radarRange=" + entity.definition.general.radarRange + " coneAngle=" + coneAngle);
-                
                 for (EntityVehicleF_Physics vehicle : visibleVehicles) {
                     //Skip self
                     if (vehicle == entity) {
+                        continue;
+                    }
+                    
+                    //Skip if vehicle was destroyed since building the list
+                    if (vehicle.outOfHealth) {
                         continue;
                     }
                     
@@ -335,11 +338,8 @@ public abstract class EntityManager {
                     double angle = Math.abs(Math.toDegrees(Math.acos(searchVector.dotProduct(LOSVector, false))));
                     double distance = vehicleRadarPos.distanceTo(entity.position);
                     
-                    InterfaceManager.coreInterface.logError("DEBUG RADAR: Checking vehicle " + vehicle.uniqueUUID + " angle=" + angle + " distance=" + distance + " inCone=" + (angle < coneAngle) + " inRange=" + (distance < entity.definition.general.radarRange));
-                    
                     if (angle < coneAngle && vehicleRadarPos.isDistanceToCloserThan(entity.position, entity.definition.general.radarRange)) {
                         //Vehicle is detected by this radar
-                        InterfaceManager.coreInterface.logError("DEBUG RADAR: DETECTED vehicle " + vehicle.uniqueUUID);
                         if (vehicle.definition.motorized.isAircraft) {
                             entity.aircraftOnRadar.add(vehicle);
                         } else {

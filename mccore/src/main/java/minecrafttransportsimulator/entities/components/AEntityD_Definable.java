@@ -172,7 +172,7 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
     public final List<AEntityB_Existing> groundersOnRadar = new ArrayList<>();
 
     //Client-side stub lists for entities outside render distance.
-    //These are synced from server to client and cleaned up after 60 ticks (~3 seconds) of no updates.
+    //These are synced from server to client and cleaned up after 20 ticks (1 second) of no updates.
 
     //Stubs for radars that are tracking this entity
     //Used for radar_X_detected/distance/direction variables.
@@ -602,9 +602,6 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
      * This allows missile_* and gun lock-on variables to work for entities outside client render distance.
      */
     public void setMissileContacts(List<MissileLockData> missileContacts, int lockedOnCount) {
-        //Remove stale stubs that haven't been updated in 20 ticks (1 second)
-        missilesIncomingStubs.removeIf(stub -> stub.lastUpdateTick < ticksExisted - 20);
-
         gunsLockedOnCount = lockedOnCount;
 
         //Mark all existing stubs as not updated this tick
@@ -691,17 +688,9 @@ public abstract class AEntityD_Definable<JSONDefinition extends AJSONMultiModelP
     }
 
     /**
-     * Clears radar tracking stubs that weren't updated this tick.
-     * Called at the start of radar sync to remove stale entries.
-     */
-    public void clearRadarTrackingStubs() {
-        radarsTrackingStubs.clear();
-    }
-
-    /**
      * Returns true if this entity is being tracked by any radar.
      * Used for radar_detected variable.
-     * Only considers radar stubs that were updated within the last 60 ticks (~3 seconds).
+     * Only considers radar stubs that were updated within the last 20 ticks (1 second).
      * Stubs not updated within this time are considered stale and are not counted.
      */
     public boolean isBeingTrackedByRadar() {

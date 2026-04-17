@@ -156,7 +156,6 @@ public class PartGun extends APart {
 
     //Track previous targets to detect changes for registration
     private PartEngine prevEngineTarget = null;
-    private IWrapperEntity prevEntityTarget = null;
     private UUID prevTargetUUID = null;
 
     //Global data.
@@ -946,10 +945,6 @@ public class PartGun extends APart {
 
                 //For isLongRange guns, sync targetUUID to server whenever it changes.
                 if (definition.gun.isLongRange && world.isClient() && !java.util.Objects.equals(targetUUID, oldTargetUUID)) {
-                    if (ConfigSystem.settings.general.devMode.value) {
-                        String oldTarget = oldTargetUUID != null ? oldTargetUUID.toString().substring(0, 8) : "NONE";
-                        String newTarget = targetUUID != null ? targetUUID.toString().substring(0, 8) : "NONE";
-                    }
                     InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, targetUUID));
                 }
 
@@ -966,14 +961,10 @@ public class PartGun extends APart {
                     }
 
                     for (java.util.Map.Entry<java.util.UUID, Integer> entry : lockonCounts.entrySet()) {
-                        if (ConfigSystem.settings.general.devMode.value) {
-                        }
                         InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, entry.getKey(), entry.getValue()));
                     }
 
                     if (oldTargetUUID != null && !java.util.Objects.equals(oldTargetUUID, targetUUID) && !lockonCounts.containsKey(oldTargetUUID)) {
-                        if (ConfigSystem.settings.general.devMode.value) {
-                        }
                         InterfaceManager.packetInterface.sendToServer(new PacketPartGun(this, oldTargetUUID, 0));
                     }
                 }
@@ -1502,7 +1493,6 @@ public class PartGun extends APart {
             }
         }
         // Note: entityTarget targets are players/mobs, not vehicles, so we don't register for those
-        prevEntityTarget = entityTarget;
     }
 
     /**
@@ -1717,46 +1707,6 @@ public class PartGun extends APart {
     }
 
     /**
-     * Helper method to find a target in radar stubs. Client-side only.
-     */
-    private UUID findTargetInRadarStubs(Point3D startPoint, Point3D normalizedConeVector, double coneAngle, double maxDistance) {
-        UUID closestUUID = null;
-        double smallestDistance = maxDistance;
-
-        // Check appropriate list based on target type
-        List<AEntityB_Existing> contactsToCheck = new ArrayList<>();
-        if (definition.gun.targetType == TargetType.ALL || definition.gun.targetType == TargetType.HARD || definition.gun.targetType == TargetType.AIRCRAFT) {
-            contactsToCheck.addAll(vehicleOn.aircraftOnRadar);
-        }
-        if (definition.gun.targetType == TargetType.ALL || definition.gun.targetType == TargetType.HARD || definition.gun.targetType == TargetType.GROUND) {
-            contactsToCheck.addAll(vehicleOn.groundersOnRadar);
-        }
-
-        for (AEntityB_Existing contact : contactsToCheck) {
-            if (contact instanceof AEntityD_Definable.RemoteEntityStub) {
-                AEntityD_Definable.RemoteEntityStub stub = (AEntityD_Definable.RemoteEntityStub) contact;
-
-                // Don't target ourselves
-                if (vehicleOn != null && stub.entityUUID.equals(vehicleOn.uniqueUUID)) {
-                    continue;
-                }
-
-                double entityDistance = stub.position.distanceTo(startPoint);
-                if (entityDistance < smallestDistance) {
-                    // Potential match by distance, check if the entity is inside the cone
-                    normalizedEntityVector.set(stub.position).subtract(startPoint).normalize();
-                    double targetAngle = Math.abs(Math.toDegrees(Math.acos(normalizedConeVector.dotProduct(normalizedEntityVector, false))));
-                    if (targetAngle < coneAngle) {
-                        smallestDistance = entityDistance;
-                        closestUUID = stub.entityUUID;
-                    }
-                }
-            }
-        }
-
-        return closestUUID;
-    }
-    
     /**
      * Helper method to find a target in global vehicle cache. Client-side only.
      * This allows guns without radars (handheld weapons) to lock distant targets.

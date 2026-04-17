@@ -250,9 +250,8 @@ public class PacketRadarSync extends APacketBase {
             }
             
             //Clean up stale entries (not updated in last 20 ticks / 1 second)
-            //Use a simple counter-based approach since world time can vary
             world.globalVehicleCache.entrySet().removeIf(
-                entry -> currentTime - entry.getValue().lastUpdateTick > 20
+                entry -> currentTime - entry.getValue().lastUpdateTick >= 20
             );
             
             return;
