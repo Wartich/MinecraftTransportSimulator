@@ -254,7 +254,11 @@ public class WrapperWorld extends AWrapperWorld {
 
     @Override
     public void spawnEntity(AEntityB_Existing entity) {
-        spawnEntityInternal(entity);
+        if (entity instanceof minecrafttransportsimulator.entities.instances.EntityPhysicsCube) {
+            spawnPhysicsCubeInternal((minecrafttransportsimulator.entities.instances.EntityPhysicsCube) entity);
+        } else {
+            spawnEntityInternal(entity);
+        }
     }
 
     /**
@@ -262,6 +266,19 @@ public class WrapperWorld extends AWrapperWorld {
      */
     protected BuilderEntityExisting spawnEntityInternal(AEntityB_Existing entity) {
         BuilderEntityExisting builder = new BuilderEntityExisting(((WrapperWorld) entity.world).world);
+        builder.loadedFromSavedNBT = true;
+        builder.setPositionAndRotation(entity.position.x, entity.position.y, entity.position.z, 0, 0);
+        builder.entity = entity;
+        world.spawnEntity(builder);
+        addEntity(entity);
+        return builder;
+    }
+
+    /**
+     * Internal method to spawn physics cube entities.
+     */
+    protected BuilderEntityPhysicsCube spawnPhysicsCubeInternal(minecrafttransportsimulator.entities.instances.EntityPhysicsCube entity) {
+        BuilderEntityPhysicsCube builder = new BuilderEntityPhysicsCube(((WrapperWorld) entity.world).world);
         builder.loadedFromSavedNBT = true;
         builder.setPositionAndRotation(entity.position.x, entity.position.y, entity.position.z, 0, 0);
         builder.entity = entity;
@@ -1085,6 +1102,48 @@ public class WrapperWorld extends AWrapperWorld {
             onUnload();
             worldWrappers.remove(world);
         }
+    }
+
+    @Override
+    public List<minecrafttransportsimulator.baseclasses.BoundingBox> getBlockCollisionBoxes(Point3D position) {
+        BlockPos pos = new BlockPos(position.x, position.y, position.z);
+        if (!world.isBlockLoaded(pos)) {
+            return null;
+        }
+        
+        IBlockState state = world.getBlockState(pos);
+        if (!state.getBlock().canCollideCheck(state, false) || state.getCollisionBoundingBox(world, pos) == null) {
+            return null;
+        }
+        
+        List<AxisAlignedBB> mcBoxes = new ArrayList<>();
+        // Use a large bounding box to get all collision boxes for this block
+        AxisAlignedBB checkBox = new AxisAlignedBB(pos).grow(0.5);
+        state.addCollisionBoxToList(world, pos, checkBox, mcBoxes, null, false);
+        
+        if (mcBoxes.isEmpty()) {
+            return null;
+        }
+        
+        List<minecrafttransportsimulator.baseclasses.BoundingBox> boxes = new ArrayList<>();
+        for (AxisAlignedBB mcBox : mcBoxes) {
+            // Convert MC AABB to MTS BoundingBox
+            double centerX = (mcBox.minX + mcBox.maxX) / 2.0;
+            double centerY = (mcBox.minY + mcBox.maxY) / 2.0;
+            double centerZ = (mcBox.minZ + mcBox.maxZ) / 2.0;
+            double width = (mcBox.maxX - mcBox.minX) / 2.0;
+            double height = (mcBox.maxY - mcBox.minY) / 2.0;
+            double depth = (mcBox.maxZ - mcBox.minZ) / 2.0;
+            
+            minecrafttransportsimulator.baseclasses.BoundingBox box = 
+                new minecrafttransportsimulator.baseclasses.BoundingBox(
+                    new Point3D(centerX, centerY, centerZ),
+                    width, height, depth
+                );
+            boxes.add(box);
+        }
+        
+        return boxes;
     }
 
 }

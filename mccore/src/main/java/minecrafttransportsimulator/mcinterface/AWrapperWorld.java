@@ -211,6 +211,12 @@ public abstract class AWrapperWorld extends EntityManager {
     public abstract BlockHitResult getBlockHit(Point3D position, Point3D delta);
 
     /**
+     * Returns a list of collision bounding boxes for the block at the given position.
+     * Returns null or empty list if the block has no collision.
+     */
+    public abstract List<minecrafttransportsimulator.baseclasses.BoundingBox> getBlockCollisionBoxes(Point3D position);
+
+    /**
      * Returns true if the block at the passed-in position is solid at the passed-in axis.
      * Solid means that said block can be collided with, is a cube, and is generally able to have
      * things placed or connected to it.

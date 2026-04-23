@@ -249,6 +249,7 @@ public class InterfaceLoader {
         BuilderEntityExisting.E_TYPE2 = ABuilderEntityBase.ENTITIES.register("builder_existing", () -> EntityType.Builder.<BuilderEntityExisting>of(BuilderEntityExisting::new, MobCategory.MISC).sized(0.05F, 0.05F).clientTrackingRange(32 * 16).updateInterval(5).build("builder_existing"));
         BuilderEntityLinkedSeat.E_TYPE3 = ABuilderEntityBase.ENTITIES.register("builder_seat", () -> EntityType.Builder.<BuilderEntityLinkedSeat>of(BuilderEntityLinkedSeat::new, MobCategory.MISC).sized(0.05F, 0.05F).clientTrackingRange(32 * 16).updateInterval(5).build("builder_seat"));
         BuilderEntityRenderForwarder.E_TYPE4 = ABuilderEntityBase.ENTITIES.register("builder_rendering", () -> EntityType.Builder.<BuilderEntityRenderForwarder>of(BuilderEntityRenderForwarder::new, MobCategory.MISC).sized(0.05F, 0.05F).clientTrackingRange(32 * 16).updateInterval(5).build("builder_rendering"));
+        BuilderEntityPhysicsCube.E_TYPE_PHYSICS_CUBE = ABuilderEntityBase.ENTITIES.register("builder_physics_cube", () -> EntityType.Builder.<BuilderEntityPhysicsCube>of(BuilderEntityPhysicsCube::new, MobCategory.MISC).sized(1.0F, 1.0F).clientTrackingRange(32 * 16).updateInterval(5).build("builder_physics_cube"));
 
         //Iterate over all pack items and find those that spawn entities.
         //Register these with the IV internal system.

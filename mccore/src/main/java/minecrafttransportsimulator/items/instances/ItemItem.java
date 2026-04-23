@@ -465,6 +465,16 @@ public class ItemItem extends AItemPack<JSONItem> implements IItemEntityInteract
                     return true;
                 }
             }
+        } else if (definition.item.type == ItemComponentType.WRENCH) {
+            // Shift+right-click with wrench spawns a physics cube
+            if (player.isSneaking() && !world.isClient()) {
+                // Spawn the cube 1 block above the clicked position
+                Point3D spawnPos = new Point3D(position.x + 0.5, position.y + 1.5, position.z + 0.5);
+                minecrafttransportsimulator.entities.instances.EntityPhysicsCube cube = 
+                    new minecrafttransportsimulator.entities.instances.EntityPhysicsCube(world, spawnPos);
+                world.spawnEntity(cube);
+                return true;
+            }
         } else if (definition.item.type.equals(ItemComponentType.BOOKLET)) {
             if (!world.isClient()) {
                 player.sendPacket(new PacketGUIRequest(player, PacketGUIRequest.GUIType.BOOKLET));

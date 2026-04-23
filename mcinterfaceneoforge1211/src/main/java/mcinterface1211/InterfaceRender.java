@@ -150,6 +150,7 @@ public class InterfaceRender implements IInterfaceRender {
         //If we don't, the game crashes when trying to render them.
         event.registerEntityRenderer(BuilderEntityExisting.E_TYPE2.get(), manager -> new BlankRender<BuilderEntityExisting>(manager));
         event.registerEntityRenderer(BuilderEntityLinkedSeat.E_TYPE3.get(), manager -> new BlankRender<BuilderEntityLinkedSeat>(manager));
+        event.registerEntityRenderer(BuilderEntityPhysicsCube.E_TYPE_PHYSICS_CUBE.get(), manager -> new RenderPhysicsCube(manager));
     }
 
     @Override

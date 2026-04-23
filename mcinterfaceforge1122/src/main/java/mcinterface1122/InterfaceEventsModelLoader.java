@@ -120,6 +120,9 @@ public class InterfaceEventsModelLoader {
                 }
             }
         });
+        
+        //Register the physics cube renderer.
+        RenderingRegistry.registerEntityRenderingHandler(BuilderEntityPhysicsCube.class, RenderPhysicsCube::new);
 
         //Get the list of default resource packs here to inject a custom parser for auto-generating JSONS.
         //FAR easier than trying to use the bloody bakery system.

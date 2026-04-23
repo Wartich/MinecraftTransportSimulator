@@ -32,6 +32,7 @@ import minecrafttransportsimulator.packets.instances.PacketEntityTowingChange;
 import minecrafttransportsimulator.packets.instances.PacketEntityVariableIncrement;
 import minecrafttransportsimulator.packets.instances.PacketEntityVariableSet;
 import minecrafttransportsimulator.packets.instances.PacketEntityVariableToggle;
+import minecrafttransportsimulator.packets.instances.PacketPhysicsCubeSync;
 import minecrafttransportsimulator.packets.instances.PacketFluidTankChange;
 import minecrafttransportsimulator.packets.instances.PacketGUIRequest;
 import minecrafttransportsimulator.packets.instances.PacketInventoryContainerChange;
@@ -240,6 +241,7 @@ public abstract class APacketBase {
         InterfaceManager.packetInterface.registerPacket(packetIndex++, PacketEntityVariableToggle.class);
         InterfaceManager.packetInterface.registerPacket(packetIndex++, PacketEntityInteract.class);
         InterfaceManager.packetInterface.registerPacket(packetIndex++, PacketEntityInteractGUI.class);
+        InterfaceManager.packetInterface.registerPacket(packetIndex++, PacketPhysicsCubeSync.class);
 
         //Bullet packets.
         InterfaceManager.packetInterface.registerPacket(packetIndex++, PacketEntityBulletHitGeneric.class);

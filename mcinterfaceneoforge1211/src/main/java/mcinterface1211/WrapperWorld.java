@@ -278,7 +278,11 @@ public class WrapperWorld extends AWrapperWorld {
     }
     @Override
     public void spawnEntity(AEntityB_Existing entity) {
-        spawnEntityInternal(entity);
+        if (entity instanceof minecrafttransportsimulator.entities.instances.EntityPhysicsCube) {
+            spawnPhysicsCubeInternal((minecrafttransportsimulator.entities.instances.EntityPhysicsCube) entity);
+        } else {
+            spawnEntityInternal(entity);
+        }
     }
 
     /**
@@ -286,6 +290,19 @@ public class WrapperWorld extends AWrapperWorld {
      */
     protected BuilderEntityExisting spawnEntityInternal(AEntityB_Existing entity) {
         BuilderEntityExisting builder = new BuilderEntityExisting(BuilderEntityExisting.E_TYPE2.get(), ((WrapperWorld) entity.world).world);
+        builder.loadedFromSavedNBT = true;
+        builder.setPos(entity.position.x, entity.position.y, entity.position.z);
+        builder.entity = entity;
+        world.addFreshEntity(builder);
+        addEntity(entity);
+        return builder;
+    }
+
+    /**
+     * Internal method to spawn physics cube entities.
+     */
+    protected BuilderEntityPhysicsCube spawnPhysicsCubeInternal(minecrafttransportsimulator.entities.instances.EntityPhysicsCube entity) {
+        BuilderEntityPhysicsCube builder = new BuilderEntityPhysicsCube(BuilderEntityPhysicsCube.E_TYPE_PHYSICS_CUBE.get(), ((WrapperWorld) entity.world).world);
         builder.loadedFromSavedNBT = true;
         builder.setPos(entity.position.x, entity.position.y, entity.position.z);
         builder.entity = entity;
