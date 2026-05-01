@@ -35,10 +35,14 @@ import java.util.Set;
  */
 public class EntityPhysicsCube extends AEntityC_Renderable {
     
-    private static final double CUBE_SIZE = 1.0;
-    private static final double CUBE_RADIUS = CUBE_SIZE / 2.0;
-    private static final float MASS = 1.0f; // 1 kg
-    private static final float RESTITUTION = 0.5f; // Bounciness
+    // Cuboid dimensions (in blocks)
+    private static final double CUBOID_WIDTH = 1.5;   // X axis
+    private static final double CUBOID_HEIGHT = 1.5;  // Y axis
+    private static final double CUBOID_DEPTH = 3.0;   // Z axis
+    
+    private static final float MASS = 1000.0f; // Mass in kg
+    private static final float RESTITUTION = 0.1f; // Bounciness (0 = no bounce, 1 = perfect bounce)
+    private static final float FRICTION = 0.9f; // Friction coefficient (0 = ice, 1+ = rubber)
     
     public final BoundingBox interactionBox;
     
@@ -58,7 +62,9 @@ public class EntityPhysicsCube extends AEntityC_Renderable {
         Set<CollisionType> collisionTypes = new HashSet<>();
         collisionTypes.add(CollisionType.CLICK);
         collisionTypes.add(CollisionType.ATTACK);
-        this.interactionBox = new BoundingBox(new Point3D(), position, CUBE_RADIUS, CUBE_RADIUS, CUBE_RADIUS, false, collisionTypes);
+        this.interactionBox = new BoundingBox(new Point3D(), position, 
+            CUBOID_WIDTH / 2.0, CUBOID_HEIGHT / 2.0, CUBOID_DEPTH / 2.0, 
+            false, collisionTypes);
         
         // Initialize physics
         initPhysics();
@@ -74,7 +80,9 @@ public class EntityPhysicsCube extends AEntityC_Renderable {
         Set<CollisionType> collisionTypes = new HashSet<>();
         collisionTypes.add(CollisionType.CLICK);
         collisionTypes.add(CollisionType.ATTACK);
-        this.interactionBox = new BoundingBox(new Point3D(), this.position, CUBE_RADIUS, CUBE_RADIUS, CUBE_RADIUS, false, collisionTypes);
+        this.interactionBox = new BoundingBox(new Point3D(), this.position, 
+            CUBOID_WIDTH / 2.0, CUBOID_HEIGHT / 2.0, CUBOID_DEPTH / 2.0, 
+            false, collisionTypes);
         
         // Initialize physics
         initPhysics();
@@ -94,7 +102,11 @@ public class EntityPhysicsCube extends AEntityC_Renderable {
         physicsWorld = new PhysicsWorld();
         
         // Create box collision shape (half-extents)
-        Vector3f halfExtents = new Vector3f((float)CUBE_RADIUS, (float)CUBE_RADIUS, (float)CUBE_RADIUS);
+        Vector3f halfExtents = new Vector3f(
+            (float)(CUBOID_WIDTH / 2.0), 
+            (float)(CUBOID_HEIGHT / 2.0), 
+            (float)(CUBOID_DEPTH / 2.0)
+        );
         collisionShape = new BoxShape(halfExtents);
         
         // Create initial transform
@@ -115,6 +127,7 @@ public class EntityPhysicsCube extends AEntityC_Renderable {
         // Create rigid body
         RigidBodyConstructionInfo rbInfo = new RigidBodyConstructionInfo(MASS, motionState, collisionShape, localInertia);
         rbInfo.restitution = RESTITUTION;
+        rbInfo.friction = FRICTION;
         rigidBody = new RigidBody(rbInfo);
         
         // Make sure the body is active and doesn't deactivate
@@ -203,21 +216,28 @@ public class EntityPhysicsCube extends AEntityC_Renderable {
     }
     
     /**
-     * Called when a player interacts with this cube
+     * Called when a player interacts with this cube.
+     * Now does nothing - use shift+attack to remove.
      */
     public boolean interact(IWrapperPlayer player) {
-        if (!world.isClient()) {
-            // For now, just remove the cube when clicked
-            this.isValid = false;
-        }
-        return true;
+        // No action on right-click
+        return false;
     }
     
     /**
-     * Called when a player attacks this cube
+     * Called when a player attacks this cube.
+     * If shift+attacking with wrench, remove the cube.
+     * Otherwise, apply force.
      */
     public void attack(IWrapperPlayer player) {
         if (!world.isClient()) {
+            // Check if player is holding a wrench and sneaking
+            if (player.isSneaking() && player.isHoldingItemType(minecrafttransportsimulator.jsondefs.JSONItem.ItemComponentType.WRENCH)) {
+                System.out.println("PhysicsCube: Removed by " + player.getName());
+                this.isValid = false;
+                return;
+            }
+            
             System.out.println("PhysicsCube: Attacked by " + player.getName());
             
             // Get the player's look direction and position
@@ -243,16 +263,16 @@ public class EntityPhysicsCube extends AEntityC_Renderable {
     }
     
     /**
-     * Calculates where the player's raycast hits the cube.
+     * Calculates where the player's raycast hits the cuboid.
      */
     private Point3D calculateHitPoint(Point3D rayStart, Point3D rayDir) {
         // Simple AABB ray intersection
-        // Find intersection with cube faces
+        // Find intersection with cuboid faces
         double tMin = Double.NEGATIVE_INFINITY;
         double tMax = Double.POSITIVE_INFINITY;
         
-        Point3D cubeMin = position.copy().add(-CUBE_RADIUS, -CUBE_RADIUS, -CUBE_RADIUS);
-        Point3D cubeMax = position.copy().add(CUBE_RADIUS, CUBE_RADIUS, CUBE_RADIUS);
+        Point3D cubeMin = position.copy().add(-CUBOID_WIDTH/2, -CUBOID_HEIGHT/2, -CUBOID_DEPTH/2);
+        Point3D cubeMax = position.copy().add(CUBOID_WIDTH/2, CUBOID_HEIGHT/2, CUBOID_DEPTH/2);
         
         // Check each axis
         for (int i = 0; i < 3; i++) {
@@ -332,10 +352,18 @@ public class EntityPhysicsCube extends AEntityC_Renderable {
     }
     
     /**
-     * Get the cube size for rendering
+     * Get the cuboid dimensions for rendering
      */
-    public double getCubeSize() {
-        return CUBE_SIZE;
+    public double getCuboidWidth() {
+        return CUBOID_WIDTH;
+    }
+    
+    public double getCuboidHeight() {
+        return CUBOID_HEIGHT;
+    }
+    
+    public double getCuboidDepth() {
+        return CUBOID_DEPTH;
     }
     
     @Override

@@ -70,9 +70,10 @@ public class RenderPhysicsCube extends Render<BuilderEntityPhysicsCube> {
         GlStateManager.enableBlend();
         GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
         
-        // Get the cube size
-        double size = builder.entity.getCubeSize();
-        float halfSize = (float) (size / 2.0);
+        // Get the cuboid dimensions
+        float halfWidth = (float) (builder.entity.getCuboidWidth() / 2.0);
+        float halfHeight = (float) (builder.entity.getCuboidHeight() / 2.0);
+        float halfDepth = (float) (builder.entity.getCuboidDepth() / 2.0);
         
         // Set up for line rendering
         Tessellator tessellator = Tessellator.getInstance();
@@ -81,16 +82,16 @@ public class RenderPhysicsCube extends Render<BuilderEntityPhysicsCube> {
         // Draw colored wireframe to see rotation
         buffer.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR);
         
-        // Define the 8 corners of the cube
+        // Define the 8 corners of the cuboid
         float[][] corners = {
-            {-halfSize, -halfSize, -halfSize}, // 0: bottom-back-left
-            { halfSize, -halfSize, -halfSize}, // 1: bottom-back-right
-            { halfSize, -halfSize,  halfSize}, // 2: bottom-front-right
-            {-halfSize, -halfSize,  halfSize}, // 3: bottom-front-left
-            {-halfSize,  halfSize, -halfSize}, // 4: top-back-left
-            { halfSize,  halfSize, -halfSize}, // 5: top-back-right
-            { halfSize,  halfSize,  halfSize}, // 6: top-front-right
-            {-halfSize,  halfSize,  halfSize}  // 7: top-front-left
+            {-halfWidth, -halfHeight, -halfDepth}, // 0: bottom-back-left
+            { halfWidth, -halfHeight, -halfDepth}, // 1: bottom-back-right
+            { halfWidth, -halfHeight,  halfDepth}, // 2: bottom-front-right
+            {-halfWidth, -halfHeight,  halfDepth}, // 3: bottom-front-left
+            {-halfWidth,  halfHeight, -halfDepth}, // 4: top-back-left
+            { halfWidth,  halfHeight, -halfDepth}, // 5: top-back-right
+            { halfWidth,  halfHeight,  halfDepth}, // 6: top-front-right
+            {-halfWidth,  halfHeight,  halfDepth}  // 7: top-front-left
         };
         
         // Draw the 12 edges of the cube with different colors

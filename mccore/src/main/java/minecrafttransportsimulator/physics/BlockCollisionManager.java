@@ -26,6 +26,10 @@ public class BlockCollisionManager {
     private final AWrapperWorld world;
     private final PhysicsWorld physicsWorld;
     
+    // Block physics properties
+    private static final float BLOCK_FRICTION = 0.7f; // How much blocks resist sliding (0 = ice, 1+ = rubber)
+    private static final float BLOCK_RESTITUTION = 0.3f; // How bouncy blocks are (0 = no bounce, 1 = perfect bounce)
+    
     // Cache of block positions to their rigid bodies
     private final Map<Long, RigidBody> blockBodies = new HashMap<>();
     
@@ -103,8 +107,8 @@ public class BlockCollisionManager {
         // Create static rigid body (mass = 0)
         RigidBody body = new RigidBody(0, null, shape, new Vector3f(0, 0, 0));
         body.setWorldTransform(transform);
-        body.setFriction(0.7f);
-        body.setRestitution(0.3f);
+        body.setFriction(BLOCK_FRICTION);
+        body.setRestitution(BLOCK_RESTITUTION);
         
         // Disable deactivation for static bodies
         body.setActivationState(CollisionObject.DISABLE_DEACTIVATION);
